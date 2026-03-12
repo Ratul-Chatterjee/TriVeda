@@ -158,20 +158,20 @@ function Router() {
 
       {/* Practitioner Routes */}
       <Route
-        path="/practitioner/dashboard"
+        path="/doctor/dashboard"
         component={PractitionerDashboardPage}
       />
       {/* <Route path="/practitioner/diet-chart" component={DietChartCreationPage} /> */}
       <Route
-        path="/practitioner/register"
+        path="/doctor/register"
         component={() => <PractitionerRegistration />}
       />
       <Route
-        path="/practitioner/prakriti-verification"
+        path="/doctor/prakriti-verification"
         component={PrakritiVerificationPage}
       />
       <Route
-        path="/practitioner/diet-chart-generator"
+        path="/doctor/diet-chart-generator"
         component={() => (
           <PractitionerAppLayout>
             <DietChartGenerator />
@@ -179,7 +179,7 @@ function Router() {
         )}
       />
       <Route
-        path="/practitioner/monitoring"
+        path="/doctor/monitoring"
         component={() => (
           <PractitionerAppLayout>
             <Monitoring />
