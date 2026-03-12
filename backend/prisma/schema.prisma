@@ -1,13 +1,5 @@
-generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
-}
-
-// prisma/schema.prisma
 datasource db {
-  provider  = "postgresql"
-  // uncomment next line if you use Prisma <5.10
-  // directUrl = env("DATABASE_URL_UNPOOLED")
+  provider = "postgresql"
 }
 
 // --- ENUMS ---
