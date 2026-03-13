@@ -83,6 +83,12 @@ const PractitionerDashboardPage = () => (
   </PractitionerAppLayout>
 );
 
+const PractitionerPatientProfilePage = ({ patientId }: { patientId: string }) => (
+  <PractitionerAppLayout>
+    <PractitionerDashboard patientId={patientId} />
+  </PractitionerAppLayout>
+);
+
 // const DietChartCreationPage = () => (
 //   <PractitionerAppLayout>
 //     <DietChartCreation />
@@ -184,6 +190,12 @@ function Router() {
           <PractitionerAppLayout>
             <Monitoring />
           </PractitionerAppLayout>
+        )}
+      />
+      <Route
+        path="/doctor/:patientId"
+        component={({ params }) => (
+          <PractitionerPatientProfilePage patientId={params.patientId} />
         )}
       />
 

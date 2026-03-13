@@ -203,10 +203,12 @@ const prakritiDistribution = [
 
 interface PractitionerDashboardProps {
   onNavigate?: (view: string) => void;
+  patientId?: string;
 }
 
 export default function PractitionerDashboard({
   onNavigate,
+  patientId,
 }: PractitionerDashboardProps) {
   // Reschedule Modal State
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -307,6 +309,15 @@ export default function PractitionerDashboard({
     setShowGuidelineModal(false);
     setGuidelinePatient(null);
   };
+
+  useEffect(() => {
+    if (!patientId) {
+      setSelectedPatient(null);
+      return;
+    }
+    const patientFromRoute = patients.find((patient) => patient.id === patientId) || null;
+    setSelectedPatient(patientFromRoute);
+  }, [patientId, patients]);
 
   const filteredPatients = patients
     .filter((patient) => {
@@ -415,11 +426,6 @@ export default function PractitionerDashboard({
     setAddForm({ name: "", location: "", need: "", phone: "" });
   };
 
-  const handlePatientSelect = (patient: (typeof mockPatients)[0]) => {
-    setSelectedPatient(patient);
-    setTab(1);
-  };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "high":
@@ -453,7 +459,265 @@ export default function PractitionerDashboard({
     { icon: Activity, name: "Assessment", action: "assessment" },
   ];
 
-  const tabNames = ["Patients", "Patient Profile", "Analytics", "Appointments"];
+  const tabNames = ["Appointments", "Patients", "Analytics"];
+
+  const renderPatientProfile = () => {
+    if (!selectedPatient) {
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-10 text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Patient Not Found</h2>
+          <p className="text-gray-600 mb-6">
+            We could not find a patient for the selected doctor profile route.
+          </p>
+          <button
+            onClick={() => {
+              window.location.href = "/doctor/dashboard";
+            }}
+            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-5 py-2 rounded-lg font-semibold"
+          >
+            Back to Doctor Dashboard
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-20 h-20 bg-gradient-to-br from-[#1F5C3F] to-[#10B981] rounded-full flex items-center justify-center text-white text-2xl font-semibold">
+              {selectedPatient.name[0]}
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900">
+                {selectedPatient.name}
+              </h2>
+              <div className="flex space-x-2 mt-2">
+                <span className="px-3 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-sm font-medium">
+                  {selectedPatient.prakriti}
+                </span>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(
+                    selectedPatient.priority
+                  )}`}
+                >
+                  {selectedPatient.priority}
+                </span>
+              </div>
+              <p className="text-gray-600 mt-1">
+                {selectedPatient.age} years • {selectedPatient.gender}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex space-x-3">
+            <button className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
+              <Video className="w-4 h-4" />
+              <span>Video Call</span>
+            </button>
+            <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
+              <MessageCircle className="w-4 h-4" />
+              <span>Message</span>
+            </button>
+            <button
+              onClick={() => {
+                window.location.href = "/doctor/dashboard";
+              }}
+              className="text-gray-400 hover:text-gray-600 p-2"
+              aria-label="Back to dashboard"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6">
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <User className="w-5 h-5 mr-2 text-[#1F5C3F]" />
+                Patient Information
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <Mail className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm">{selectedPatient.email}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Phone className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm">{selectedPatient.phone}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <MapPin className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm">{selectedPatient.location}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm">Last Visit: {selectedPatient.lastVisit}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm">Next: {selectedPatient.nextAppointment}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-red-50 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Monitor className="w-5 h-5 mr-2 text-red-600" />
+                Vital Signs
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-xl font-bold text-gray-900">
+                    {selectedPatient.vitalSigns.bp}
+                  </div>
+                  <div className="text-xs text-gray-600">Blood Pressure</div>
+                </div>
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-xl font-bold text-gray-900">
+                    {selectedPatient.vitalSigns.pulse}
+                  </div>
+                  <div className="text-xs text-gray-600">Pulse (bpm)</div>
+                </div>
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-xl font-bold text-gray-900">
+                    {selectedPatient.vitalSigns.weight}
+                  </div>
+                  <div className="text-xs text-gray-600">Weight</div>
+                </div>
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-xl font-bold text-gray-900">
+                    {selectedPatient.vitalSigns.temp}
+                  </div>
+                  <div className="text-xs text-gray-600">Temperature</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Shield className="w-5 h-5 mr-2 text-yellow-600" />
+                Risk Assessment
+              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-gray-600">Risk Score</span>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    selectedPatient.riskScore >= 4
+                      ? "bg-red-100 text-red-800"
+                      : selectedPatient.riskScore >= 3
+                      ? "bg-yellow-100 text-yellow-800"
+                      : "bg-green-100 text-green-800"
+                  }`}
+                >
+                  {selectedPatient.riskScore}/5
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className={`h-3 rounded-full ${
+                    selectedPatient.riskScore >= 4
+                      ? "bg-red-500"
+                      : selectedPatient.riskScore >= 3
+                      ? "bg-yellow-500"
+                      : "bg-green-500"
+                  }`}
+                  style={{ width: `${(selectedPatient.riskScore / 5) * 100}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Based on current health conditions and compliance history
+              </p>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Stethoscope className="w-5 h-5 mr-2 text-[#1F5C3F]" />
+                Health Issues & Treatment
+              </h3>
+
+              <div className="mb-6">
+                <h4 className="font-medium text-gray-900 mb-3">Primary Health Issues</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedPatient.issues.map((issue, idx) => (
+                    <span
+                      key={idx}
+                      className="px-3 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-sm border border-emerald-200"
+                    >
+                      {issue}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <hr className="my-6" />
+
+              <div className="mb-6">
+                <h4 className="font-medium text-gray-900 mb-3">Current Medications</h4>
+                <div className="space-y-3">
+                  {selectedPatient.medications.map((med, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center space-x-3 p-3 bg-emerald-50 rounded-lg"
+                    >
+                      <div className="w-10 h-10 bg-emerald-200 rounded-full flex items-center justify-center">
+                        <Pill className="w-5 h-5 text-[#1F5C3F]" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{med}</div>
+                        <div className="text-sm text-gray-600">Take as prescribed</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <hr className="my-6" />
+
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900">Treatment Compliance</h4>
+                  <span className="text-2xl font-bold text-[#1F5C3F]">
+                    {selectedPatient.compliance}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-4">
+                  <div
+                    className="bg-[#1F5C3F] h-4 rounded-full"
+                    style={{ width: `${selectedPatient.compliance}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  Weekly compliance rate based on logged activities
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => handleCreateDietChart(selectedPatient.id)}
+                  className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Create Diet Chart</span>
+                </button>
+                <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
+                  <Edit className="w-4 h-4" />
+                  <span>Update Treatment</span>
+                </button>
+                <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
+                  <Activity className="w-4 h-4" />
+                  <span>View Reports</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -744,6 +1008,9 @@ export default function PractitionerDashboard({
 
       {/* Main Content */}
       <div className="px-4 sm:px-6 lg:px-8 mb-8">
+        {selectedPatient ? (
+          renderPatientProfile()
+        ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           {/* Tabs */}
           <div className="border-b border-gray-200">
@@ -752,15 +1019,10 @@ export default function PractitionerDashboard({
                 <button
                   key={index}
                   onClick={() => setTab(index)}
-                  disabled={index === 1 && !selectedPatient}
                   className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                     tab === index
                       ? "border-[#1F5C3F] text-[#1F5C3F]"
                       : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  } ${
-                    index === 1 && !selectedPatient
-                      ? "opacity-50 cursor-not-allowed"
-                      : ""
                   }`}
                 >
                   {name}
@@ -769,639 +1031,8 @@ export default function PractitionerDashboard({
             </div>
           </div>
 
-          {/* Patients Tab */}
-          {tab === 0 && (
-            <div className="p-6">
-              <h2 className="text-2xl font-bold mb-6 text-gray-900 flex items-center gap-2">
-                <Users className="w-6 h-6 text-[#1F5C3F]" /> Patients
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredPatients.map((patient) => (
-                  <div
-                    key={patient.id}
-                    className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl shadow-md hover:shadow-xl transition-shadow p-6 flex flex-col justify-between relative group"
-                  >
-                    {/* Priority/Risk Badge */}
-                    <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold shadow ${getPriorityColor(
-                          patient.priority
-                        )}`}
-                      >
-                        {patient.priority.toUpperCase()}
-                      </span>
-                      {patient.riskScore >= 4 && (
-                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-600 text-white shadow">
-                          HIGH RISK
-                        </span>
-                      )}
-                    </div>
-                    {/* Patient Avatar & Name */}
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-14 h-14 bg-gradient-to-br from-[#1F5C3F] to-[#10B981] rounded-full flex items-center justify-center text-white text-xl font-bold border-4 border-white shadow">
-                        {patient.name[0]}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg font-semibold text-gray-900 group-hover:text-[#10B981] transition-colors">
-                            {patient.name}
-                          </span>
-                          {patient.starred && (
-                            <Star className="w-4 h-4 text-yellow-400" />
-                          )}
-                        </div>
-                        <span className="text-xs font-medium text-gray-500">
-                          {patient.prakriti} • {patient.age}y • {patient.gender}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Status & Compliance */}
-                    <div className="flex items-center gap-3 mb-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusColor(
-                          patient.status
-                        )}`}
-                      >
-                        {patient.status.replace("-", " ").toUpperCase()}
-                      </span>
-                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-1 rounded-full">
-                        <TrendingUp className="w-3 h-3" /> {patient.compliance}%
-                        Compliance
-                      </span>
-                    </div>
-                    {/* Issues */}
-                    <div className="mb-4 flex flex-wrap gap-2">
-                      {patient.issues.map((issue, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-xs border border-emerald-200"
-                        >
-                          {issue}
-                        </span>
-                      ))}
-                    </div>
-                    {/* Actions */}
-                    <div className="flex flex-wrap gap-2 mt-auto">
-                      <button
-                        className="flex items-center gap-1 px-3 py-2 bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white rounded-lg text-xs font-semibold shadow transition-colors"
-                        onClick={() => {
-                          setSelectedPatient(patient);
-                          setTab(1);
-                        }}
-                        title="View Profile"
-                      >
-                        <User className="w-4 h-4" /> Profile
-                      </button>
-                      <button
-                        className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold shadow transition-colors"
-                        onClick={() => handleOpenGuidelineModal(patient)}
-                        title="Suggest Seasonal Guidelines"
-                      >
-                        <Shield className="w-4 h-4" /> Guidelines
-                      </button>
-                      <button
-                        className="flex items-center gap-1 px-3 py-2 bg-[#10B981] hover:bg-[#10B981]/90 text-white rounded-lg text-xs font-semibold shadow transition-colors"
-                        title="Call Patient"
-                        onClick={() => window.open(`tel:${patient.phone}`)}
-                      >
-                        <Phone className="w-4 h-4" /> Call
-                      </button>
-                      <button
-                        className="flex items-center gap-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold shadow transition-colors"
-                        title="Send Message"
-                        onClick={() => window.open(`mailto:${patient.email}`)}
-                      >
-                        <Mail className="w-4 h-4" /> Message
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Patient Profile Tab */}
-          {tab === 1 && selectedPatient && (
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center space-x-4">
-                  <div className="w-20 h-20 bg-gradient-to-br from-[#1F5C3F] to-[#10B981] rounded-full flex items-center justify-center text-white text-2xl font-semibold">
-                    {selectedPatient.name[0]}
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-900">
-                      {selectedPatient.name}
-                    </h2>
-                    <div className="flex space-x-2 mt-2">
-                      <span className="px-3 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-sm font-medium">
-                        {selectedPatient.prakriti}
-                      </span>
-                      <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(
-                          selectedPatient.priority
-                        )}`}
-                      >
-                        {selectedPatient.priority}
-                      </span>
-                    </div>
-                    <p className="text-gray-600 mt-1">
-                      {selectedPatient.age} years • {selectedPatient.gender}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex space-x-3">
-                  <button className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
-                    <Video className="w-4 h-4" />
-                    <span>Video Call</span>
-                  </button>
-                  <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Message</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedPatient(null);
-                      setTab(0);
-                    }}
-                    className="text-gray-400 hover:text-gray-600 p-2"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Patient Info */}
-                <div className="space-y-6">
-                  <div className="bg-gray-50 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center">
-                      <User className="w-5 h-5 mr-2 text-[#1F5C3F]" />
-                      Patient Information
-                    </h3>
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <Mail className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">{selectedPatient.email}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">{selectedPatient.phone}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">
-                          {selectedPatient.location}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Clock className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">
-                          Last Visit: {selectedPatient.lastVisit}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">
-                          Next: {selectedPatient.nextAppointment}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Vital Signs */}
-                  <div className="bg-red-50 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center">
-                      <Monitor className="w-5 h-5 mr-2 text-red-600" />
-                      Vital Signs
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-3 bg-white rounded-lg">
-                        <div className="text-xl font-bold text-gray-900">
-                          {selectedPatient.vitalSigns.bp}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          Blood Pressure
-                        </div>
-                      </div>
-                      <div className="text-center p-3 bg-white rounded-lg">
-                        <div className="text-xl font-bold text-gray-900">
-                          {selectedPatient.vitalSigns.pulse}
-                        </div>
-                        <div className="text-xs text-gray-600">Pulse (bpm)</div>
-                      </div>
-                      <div className="text-center p-3 bg-white rounded-lg">
-                        <div className="text-xl font-bold text-gray-900">
-                          {selectedPatient.vitalSigns.weight}
-                        </div>
-                        <div className="text-xs text-gray-600">Weight</div>
-                      </div>
-                      <div className="text-center p-3 bg-white rounded-lg">
-                        <div className="text-xl font-bold text-gray-900">
-                          {selectedPatient.vitalSigns.temp}
-                        </div>
-                        <div className="text-xs text-gray-600">Temperature</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Risk Assessment */}
-                  <div className="bg-yellow-50 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center">
-                      <Shield className="w-5 h-5 mr-2 text-yellow-600" />
-                      Risk Assessment
-                    </h3>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-gray-600">Risk Score</span>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedPatient.riskScore >= 4
-                            ? "bg-red-100 text-red-800"
-                            : selectedPatient.riskScore >= 3
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {selectedPatient.riskScore}/5
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div
-                        className={`h-3 rounded-full ${
-                          selectedPatient.riskScore >= 4
-                            ? "bg-red-500"
-                            : selectedPatient.riskScore >= 3
-                            ? "bg-yellow-500"
-                            : "bg-green-500"
-                        }`}
-                        style={{
-                          width: `${(selectedPatient.riskScore / 5) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-2">
-                      Based on current health conditions and compliance history
-                    </p>
-                  </div>
-                </div>
-
-                {/* Health Issues & Treatment */}
-                <div className="lg:col-span-2 space-y-6">
-                  <div className="bg-white border border-gray-200 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center">
-                      <Stethoscope className="w-5 h-5 mr-2 text-[#1F5C3F]" />
-                      Health Issues & Treatment
-                    </h3>
-
-                    <div className="mb-6">
-                      <h4 className="font-medium text-gray-900 mb-3">
-                        Primary Health Issues
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedPatient.issues.map((issue, idx) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-sm border border-emerald-200"
-                          >
-                            {issue}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <hr className="my-6" />
-
-                    <div className="mb-6">
-                      <h4 className="font-medium text-gray-900 mb-3">
-                        Current Medications
-                      </h4>
-                      <div className="space-y-3">
-                        {selectedPatient.medications.map((med, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center space-x-3 p-3 bg-emerald-50 rounded-lg"
-                          >
-                            <div className="w-10 h-10 bg-emerald-200 rounded-full flex items-center justify-center">
-                              <Pill className="w-5 h-5 text-[#1F5C3F]" />
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {med}
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                Take as prescribed
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <hr className="my-6" />
-
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-medium text-gray-900">
-                          Treatment Compliance
-                        </h4>
-                        <span className="text-2xl font-bold text-[#1F5C3F]">
-                          {selectedPatient.compliance}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-4">
-                        <div
-                          className="bg-[#1F5C3F] h-4 rounded-full"
-                          style={{ width: `${selectedPatient.compliance}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-sm text-gray-600 mt-2">
-                        Weekly compliance rate based on logged activities
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        onClick={() =>
-                          handleCreateDietChart(selectedPatient.id)
-                        }
-                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
-                      >
-                        <FileText className="w-4 h-4" />
-                        <span>Create Diet Chart</span>
-                      </button>
-                      <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
-                        <Edit className="w-4 h-4" />
-                        <span>Update Treatment</span>
-                      </button>
-                      <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
-                        <Activity className="w-4 h-4" />
-                        <span>View Reports</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Treatment Timeline */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center">
-                      <Clock className="w-5 h-5 mr-2 text-[#1F5C3F]" />
-                      Treatment Timeline
-                    </h3>
-                    <div className="space-y-4">
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                            <CheckCircle className="w-4 h-4 text-green-600" />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">
-                            Diet Chart Approved
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Customized Ayurvedic diet plan created and approved
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Jan 15, 2024
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
-                            <FileText className="w-4 h-4 text-[#1F5C3F]" />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">
-                            Lab Results Received
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            All parameters within normal range
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Jan 10, 2024
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
-                            <User className="w-4 h-4 text-[#1F5C3F]" />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">
-                            Initial Consultation
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Prakriti assessment and initial treatment plan
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Jan 5, 2024
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Analytics Tab */}
-          {tab === 2 && (
-            <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Compliance Trends */}
-                <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Compliance Trends
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    Monthly patient compliance rates
-                  </p>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={complianceData}>
-                        <defs>
-                          <linearGradient
-                            id="complianceGradient"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="5%"
-                              stopColor="#8b5cf6"
-                              stopOpacity={0.8}
-                            />
-                            <stop
-                              offset="95%"
-                              stopColor="#8b5cf6"
-                              stopOpacity={0.1}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <XAxis dataKey="month" />
-                        <YAxis />
-                        <RechartsTooltip />
-                        <Area
-                          type="monotone"
-                          dataKey="compliance"
-                          stroke="#8b5cf6"
-                          fillOpacity={1}
-                          fill="url(#complianceGradient)"
-                          strokeWidth={3}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="target"
-                          stroke="#06d6a0"
-                          fillOpacity={0}
-                          strokeDasharray="5 5"
-                          strokeWidth={2}
-                        />
-                        <Legend />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Prakriti Distribution */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Prakriti Distribution
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    Patient constitution types
-                  </p>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={prakritiDistribution}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={40}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                        >
-                          {prakritiDistribution.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Patient Compliance */}
-                <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold mb-6">
-                    Patient Compliance by Individual
-                  </h3>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsBarChart data={mockPatients}>
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 12 }}
-                          angle={-45}
-                          textAnchor="end"
-                          height={80}
-                        />
-                        <YAxis />
-                        <RechartsTooltip />
-                        <Bar
-                          dataKey="compliance"
-                          name="Compliance %"
-                          fill="#8b5cf6"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </RechartsBarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Key Metrics */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold mb-6">
-                    Key Performance Indicators
-                  </h3>
-                  <div className="space-y-6">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">
-                          Patient Satisfaction
-                        </span>
-                        <span className="text-lg font-semibold">92%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-[#1F5C3F] h-2 rounded-full"
-                          style={{ width: "92%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">
-                          Treatment Effectiveness
-                        </span>
-                        <span className="text-lg font-semibold">87%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-green-500 h-2 rounded-full"
-                          style={{ width: "87%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">
-                          Appointment Adherence
-                        </span>
-                        <span className="text-lg font-semibold">94%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-[#10B981] h-2 rounded-full"
-                          style={{ width: "94%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">
-                          Follow-up Rate
-                        </span>
-                        <span className="text-lg font-semibold">78%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-yellow-500 h-2 rounded-full"
-                          style={{ width: "78%" }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Appointments Tab */}
-          {tab === 3 && (
+          {tab === 0 && (
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">
@@ -1705,7 +1336,313 @@ export default function PractitionerDashboard({
               </div>
             </div>
           )}
+
+          {/* Patients Tab */}
+          {tab === 1 && (
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6 text-gray-900 flex items-center gap-2">
+                <Users className="w-6 h-6 text-[#1F5C3F]" /> Patients
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredPatients.map((patient) => (
+                  <div
+                    key={patient.id}
+                    className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl shadow-md hover:shadow-xl transition-shadow p-6 flex flex-col justify-between relative group"
+                  >
+                    {/* Priority/Risk Badge */}
+                    <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-semibold shadow ${getPriorityColor(
+                          patient.priority
+                        )}`}
+                      >
+                        {patient.priority.toUpperCase()}
+                      </span>
+                      {patient.riskScore >= 4 && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-600 text-white shadow">
+                          HIGH RISK
+                        </span>
+                      )}
+                    </div>
+                    {/* Patient Avatar & Name */}
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-14 h-14 bg-gradient-to-br from-[#1F5C3F] to-[#10B981] rounded-full flex items-center justify-center text-white text-xl font-bold border-4 border-white shadow">
+                        {patient.name[0]}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg font-semibold text-gray-900 group-hover:text-[#10B981] transition-colors">
+                            {patient.name}
+                          </span>
+                          {patient.starred && (
+                            <Star className="w-4 h-4 text-yellow-400" />
+                          )}
+                        </div>
+                        <span className="text-xs font-medium text-gray-500">
+                          {patient.prakriti} • {patient.age}y • {patient.gender}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Status & Compliance */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusColor(
+                          patient.status
+                        )}`}
+                      >
+                        {patient.status.replace("-", " ").toUpperCase()}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                        <TrendingUp className="w-3 h-3" /> {patient.compliance}%
+                        Compliance
+                      </span>
+                    </div>
+                    {/* Issues */}
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {patient.issues.map((issue, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-xs border border-emerald-200"
+                        >
+                          {issue}
+                        </span>
+                      ))}
+                    </div>
+                    {/* Actions */}
+                    <div className="flex flex-wrap gap-2 mt-auto">
+                      <button
+                        className="flex items-center gap-1 px-3 py-2 bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                        onClick={() => {
+                          window.open(
+                            `/doctor/${patient.id}`,
+                            "_blank",
+                            "noopener,noreferrer"
+                          );
+                        }}
+                        title="View Profile"
+                      >
+                        <User className="w-4 h-4" /> Profile
+                      </button>
+                      <button
+                        className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                        onClick={() => handleOpenGuidelineModal(patient)}
+                        title="Suggest Seasonal Guidelines"
+                      >
+                        <Shield className="w-4 h-4" /> Guidelines
+                      </button>
+                      <button
+                        className="flex items-center gap-1 px-3 py-2 bg-[#10B981] hover:bg-[#10B981]/90 text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                        title="Call Patient"
+                        onClick={() => window.open(`tel:${patient.phone}`)}
+                      >
+                        <Phone className="w-4 h-4" /> Call
+                      </button>
+                      <button
+                        className="flex items-center gap-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold shadow transition-colors"
+                        title="Send Message"
+                        onClick={() => window.open(`mailto:${patient.email}`)}
+                      >
+                        <Mail className="w-4 h-4" /> Message
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Analytics Tab */}
+          {tab === 2 && (
+            <div className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Compliance Trends */}
+                <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold mb-4">
+                    Compliance Trends
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Monthly patient compliance rates
+                  </p>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={complianceData}>
+                        <defs>
+                          <linearGradient
+                            id="complianceGradient"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#8b5cf6"
+                              stopOpacity={0.8}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#8b5cf6"
+                              stopOpacity={0.1}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="month" />
+                        <YAxis />
+                        <RechartsTooltip />
+                        <Area
+                          type="monotone"
+                          dataKey="compliance"
+                          stroke="#8b5cf6"
+                          fillOpacity={1}
+                          fill="url(#complianceGradient)"
+                          strokeWidth={3}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="target"
+                          stroke="#06d6a0"
+                          fillOpacity={0}
+                          strokeDasharray="5 5"
+                          strokeWidth={2}
+                        />
+                        <Legend />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Prakriti Distribution */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold mb-4">
+                    Prakriti Distribution
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Patient constitution types
+                  </p>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={prakritiDistribution}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {prakritiDistribution.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Patient Compliance */}
+                <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold mb-6">
+                    Patient Compliance by Individual
+                  </h3>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsBarChart data={mockPatients}>
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis />
+                        <RechartsTooltip />
+                        <Bar
+                          dataKey="compliance"
+                          name="Compliance %"
+                          fill="#8b5cf6"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </RechartsBarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Key Metrics */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold mb-6">
+                    Key Performance Indicators
+                  </h3>
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600">
+                          Patient Satisfaction
+                        </span>
+                        <span className="text-lg font-semibold">92%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-[#1F5C3F] h-2 rounded-full"
+                          style={{ width: "92%" }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600">
+                          Treatment Effectiveness
+                        </span>
+                        <span className="text-lg font-semibold">87%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full"
+                          style={{ width: "87%" }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600">
+                          Appointment Adherence
+                        </span>
+                        <span className="text-lg font-semibold">94%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-[#10B981] h-2 rounded-full"
+                          style={{ width: "94%" }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-600">
+                          Follow-up Rate
+                        </span>
+                        <span className="text-lg font-semibold">78%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-yellow-500 h-2 rounded-full"
+                          style={{ width: "78%" }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
+        )}
 
         {/* Recent Activities */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 mt-8">
