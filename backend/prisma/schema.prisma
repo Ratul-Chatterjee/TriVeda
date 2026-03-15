@@ -7,12 +7,19 @@ enum Role {
   PATIENT
   DOCTOR
   ADMIN
+  RECEPTIONIST
 }
 
 enum AppointmentStatus {
   SCHEDULED
   COMPLETED
   CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
 }
 
 // --- ENTITIES ---
@@ -25,8 +32,10 @@ model Hospital {
 
 model User {
   id            String   @id @default(uuid())
-  email         String   @unique
-  password      String   
+  email         String?   @unique
+  phoneNumber   String?   @unique
+  password      String?   
+  isAppRegistered Boolean @default(false)
   name          String
   role          Role     @default(PATIENT)
   
@@ -55,6 +64,12 @@ model PatientProfile {
   age           Int?
   gender        String?
   bloodGroup    String?
+
+  prakriti      String?
+  vikriti       String?
+
+  allergies     String[] @default([])
+  dietaryPref   String?
   
   clinicalData  Json?    
 }
@@ -67,6 +82,8 @@ model DoctorProfile {
   specialty     String   
   experienceYrs Int?
   isAvailable   Boolean  @default(true)
+  departmentId  String?
+  department  Department? @relation(fields: [departmentId], references: [id])
 }
 
 model Appointment {
@@ -82,6 +99,23 @@ model Appointment {
   
   patientSymptoms String?  @db.Text 
   aiSummary       String?  @db.Text 
+
+  paymentStatus PaymentStatus @default(PENDING)
+  transactionId String? @unique
+
+  rescheduledToId String? @unique
+  rescheduledTo Appointment? @relation("RescheduleHistory",fields: [rescheduledToId], references: [id])
+  rescheduledFrom Appointment? @relation("RescheduleHistory")
   
   createdAt       DateTime @default(now())
+}
+
+model Department {
+  id          String          @id @default(uuid())
+  name        String          @unique 
+  description String          @db.Text 
+  
+  doctors     DoctorProfile[] // A department can have many doctors
+  
+  createdAt   DateTime        @default(now())
 }
