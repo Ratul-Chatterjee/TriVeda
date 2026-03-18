@@ -6,6 +6,7 @@ import { prisma } from './db/config.js';
 
 //Routes
 import authRoutes from './routes/auth.routes.js';
+import appointmentRoutes from './routes/appointment.routes.js';
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -39,6 +40,7 @@ app.get('/', async (req, res) => {
 // MOUNT ROUTES
 // ==========================================
 app.use('/api/auth', authRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 
 // Start the server
