@@ -18,6 +18,8 @@ model Patient {
   dateOfBirth     DateTime?
   gender          String?
   bloodGroup      String?
+  profileImageData Bytes?
+  profileImageMimeType String?
   prakriti        String?
   vikriti         String?
   vataScore       Int?

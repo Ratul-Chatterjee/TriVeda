@@ -134,6 +134,62 @@ const staggerContainer = {
   },
 };
 
+const compressImageToBase64 = (
+  file: File,
+  maxDimension = 512,
+  quality = 0.8
+): Promise<{ base64: string; mimeType: string; sizeBytes: number; previewUrl: string }> => {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Unable to process selected image."));
+        return;
+      }
+
+      let targetWidth = image.width;
+      let targetHeight = image.height;
+
+      if (targetWidth > targetHeight && targetWidth > maxDimension) {
+        targetHeight = Math.round((targetHeight * maxDimension) / targetWidth);
+        targetWidth = maxDimension;
+      } else if (targetHeight >= targetWidth && targetHeight > maxDimension) {
+        targetWidth = Math.round((targetWidth * maxDimension) / targetHeight);
+        targetHeight = maxDimension;
+      }
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      const outputMime = file.type === "image/png" ? "image/png" : "image/jpeg";
+      const dataUrl = canvas.toDataURL(outputMime, outputMime === "image/jpeg" ? quality : undefined);
+      const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+
+      URL.revokeObjectURL(objectUrl);
+      resolve({
+        base64,
+        mimeType: outputMime,
+        sizeBytes: Math.ceil((base64.length * 3) / 4),
+        previewUrl: dataUrl,
+      });
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read selected image."));
+    };
+
+    image.src = objectUrl;
+  });
+};
+
 export default function PatientProfile() {
   const { toast } = useToast();
   const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
@@ -144,6 +200,12 @@ export default function PatientProfile() {
   const uploadPatientReportMutation = useUploadPatientReport();
 
   const profilePayload: any = (patientProfileData as any)?.data || patientProfileData || {};
+  const resolvedProfileImageUrl =
+    typeof profilePayload?.profileImageUrl === "string" && profilePayload.profileImageUrl.startsWith("/")
+      ? profilePayload.profileImageUrl
+      : profilePayload?.profileImageUrl;
+  const effectivePatientId = profilePayload?.id || patientId;
+  const maxDoshaScore = Number(profilePayload?.maxDoshaScore || 24);
   const latestAssessment = Array.isArray(profilePayload?.assessments)
     ? profilePayload.assessments[0]
     : null;
@@ -208,11 +270,13 @@ export default function PatientProfile() {
     recentActivity: recentActivity.length ? recentActivity : defaultProfile.recentActivity,
     bloodGroup: profilePayload?.bloodGroup || "Not specified",
     vikriti: profilePayload?.vikriti || "Not specified",
+    avatar: resolvedProfileImageUrl || defaultProfile.avatar,
     languages: ["English"],
   };
 
   const persistedReports = Array.isArray(profilePayload?.reports)
     ? profilePayload.reports.map((report: any) => ({
+        id: report.id,
         name: report.fileName,
         summary:
           report.summary ||
@@ -232,6 +296,7 @@ export default function PatientProfile() {
   
   const [newAllergy, setNewAllergy] = useState("");
   const [newCondition, setNewCondition] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -286,10 +351,14 @@ export default function PatientProfile() {
     });
 
     setReports(persistedReports);
+
+    if (profilePayload?.profileImageUrl) {
+      setAvatarPreview(null);
+    }
   }, [patientProfileData]);
 
   const handleSaveProfile = () => {
-    if (!patientId) return;
+    if (!effectivePatientId) return;
 
     if (!editForm.dateOfBirth) {
       toast({
@@ -302,7 +371,7 @@ export default function PatientProfile() {
 
     updatePatientProfileMutation.mutate(
       {
-        id: patientId,
+        id: effectivePatientId,
         payload: {
           name: editForm.name,
           phoneNumber: editForm.phoneNumber,
@@ -349,11 +418,11 @@ export default function PatientProfile() {
     nextAllergies: string[],
     nextConditions: string[]
   ) => {
-    if (!patientId) return;
+    if (!effectivePatientId) return;
 
     updatePatientProfileMutation.mutate(
       {
-        id: patientId,
+        id: effectivePatientId,
         payload: {
           allergies: nextAllergies,
           chronicConditions: nextConditions,
@@ -431,7 +500,7 @@ export default function PatientProfile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!patientId) {
+    if (!effectivePatientId) {
       toast({
         title: "Upload Failed",
         description: "Patient ID is missing.",
@@ -456,7 +525,7 @@ export default function PatientProfile() {
 
       uploadPatientReportMutation.mutate(
         {
-          id: patientId,
+          id: effectivePatientId,
           payload: {
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
@@ -485,6 +554,68 @@ export default function PatientProfile() {
     };
 
     reader.readAsDataURL(file);
+  };
+
+  const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !effectivePatientId) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Image Upload Failed",
+        description: "Please select a valid image file.",
+        variant: "destructive",
+      });
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      const compressed = await compressImageToBase64(file);
+
+      if (compressed.sizeBytes > 2 * 1024 * 1024) {
+        toast({
+          title: "Image Upload Failed",
+          description: "Image is too large after compression. Please choose a smaller file.",
+          variant: "destructive",
+        });
+        e.target.value = "";
+        return;
+      }
+
+      setAvatarPreview(compressed.previewUrl);
+
+      updatePatientProfileMutation.mutate(
+        {
+          id: effectivePatientId,
+          payload: {
+            profileImageBase64: compressed.base64,
+            profileImageMimeType: compressed.mimeType,
+          },
+        },
+        {
+          onSuccess: () => {
+            toast({ title: "Profile picture updated" });
+          },
+          onError: (error: any) => {
+            setAvatarPreview(null);
+            toast({
+              title: "Image Upload Failed",
+              description: error?.message || "Could not upload profile image.",
+              variant: "destructive",
+            });
+          },
+        }
+      );
+    } catch (error: any) {
+      toast({
+        title: "Image Upload Failed",
+        description: error?.message || "Unable to process selected image.",
+        variant: "destructive",
+      });
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const doshaStyleMap: Record<string, { label: string; value: string; track: string; fill: string }> = {
@@ -750,10 +881,22 @@ export default function PatientProfile() {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-[#10B981] rounded-full blur-xl opacity-50"></div>
               <img
-                src={mockProfile.avatar}
+                src={avatarPreview || mockProfile.avatar}
                 alt="avatar"
                 className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-xl object-cover"
               />
+              <label
+                className="absolute top-1 right-1 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-emerald-500 to-[#10B981] text-white shadow-lg border-2 border-white flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                title="Change profile photo"
+              >
+                <Plus className="w-4 h-4" />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  onChange={handleProfileImageUpload}
+                />
+              </label>
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -976,7 +1119,7 @@ export default function PatientProfile() {
                           <RadarChart data={mockProfile.doshaScores}>
                             <PolarGrid stroke="#e5e7eb" />
                             <PolarAngleAxis dataKey="dosha" stroke="#6b7280" />
-                            <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#6b7280" />
+                            <PolarRadiusAxis angle={30} domain={[0, maxDoshaScore]} stroke="#6b7280" />
                             <Radar
                               name="Dosha"
                               dataKey="score"
@@ -1011,15 +1154,18 @@ export default function PatientProfile() {
                           track: "bg-slate-100",
                           fill: "bg-slate-500",
                         };
-                      const normalizedScore = Math.max(0, Math.min(100, Number(dosha.score) || 0));
-                      const barWidth = normalizedScore > 0 ? Math.max(normalizedScore, 4) : 0;
+                      const normalizedScore = Math.max(0, Number(dosha.score) || 0);
+                      const barWidth =
+                        normalizedScore > 0
+                          ? Math.max((normalizedScore / Math.max(maxDoshaScore, 1)) * 100, 4)
+                          : 0;
                       return (
                         <div key={dosha.dosha} className="text-center">
                           <div className={`text-sm font-medium mb-1 ${styles.label}`}>
                             {dosha.dosha}
                           </div>
                           <div className={`text-2xl font-bold ${styles.value}`}>
-                            {dosha.score}%
+                            {dosha.score}
                           </div>
                           <div className={`w-full h-1.5 rounded-full mt-2 ${styles.track}`}>
                             <motion.div
@@ -1029,6 +1175,7 @@ export default function PatientProfile() {
                               className={`h-full rounded-full ${styles.fill}`}
                             />
                           </div>
+                          <div className="text-xs text-gray-500 mt-1">/{maxDoshaScore}</div>
                         </div>
                       );
                     })}
@@ -1365,6 +1512,16 @@ export default function PatientProfile() {
                         <p className="text-sm text-gray-700 bg-white/80 rounded-lg p-3">
                           {report.summary}
                         </p>
+                        {report.id && effectivePatientId && (
+                          <div className="mt-2">
+                            <a
+                              href={`/api/profile/patient/${effectivePatientId}/reports/${report.id}/download`}
+                              className="text-xs sm:text-sm font-medium text-[#1F5C3F] hover:text-[#10B981]"
+                            >
+                              Download Report
+                            </a>
+                          </div>
+                        )}
                         {report.summary.includes("analyzing") && (
                           <div className="flex items-center gap-2 mt-2">
                             <div className="w-4 h-4 border-2 border-[#1F5C3F] border-t-transparent rounded-full animate-spin"></div>

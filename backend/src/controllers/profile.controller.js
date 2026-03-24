@@ -26,10 +26,28 @@ export const getPatientProfile = asyncHandler(async (req, res) => {
     }
 
     const includeQuery = {
-        include: {
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            phoneNumber: true,
+            age: true,
+            dateOfBirth: true,
+            gender: true,
+            bloodGroup: true,
+            prakriti: true,
+            vikriti: true,
+            dietaryPref: true,
+            allergies: true,
+            clinicalData: true,
+            profileImageMimeType: true,
             appointments: {
                 orderBy: { scheduledAt: 'desc' },
-                include: {
+                take: 30,
+                select: {
+                    id: true,
+                    status: true,
+                    scheduledAt: true,
                     doctor: {
                         select: {
                             id: true,
@@ -52,6 +70,14 @@ export const getPatientProfile = asyncHandler(async (req, res) => {
                     vataScore: true,
                     pittaScore: true,
                     kaphaScore: true,
+                    answer1: true,
+                    answer2: true,
+                    answer3: true,
+                    answer4: true,
+                    answer5: true,
+                    answer6: true,
+                    answer7: true,
+                    answer8: true,
                     createdAt: true,
                 },
             },
@@ -94,9 +120,70 @@ export const getPatientProfile = asyncHandler(async (req, res) => {
         throw new ApiError(404, 'Patient not found.');
     }
 
+    const latestAssessment = Array.isArray(patient.assessments) && patient.assessments.length > 0
+        ? patient.assessments[0]
+        : null;
+
+    const answeredCount = latestAssessment
+        ? [
+            latestAssessment.answer1,
+            latestAssessment.answer2,
+            latestAssessment.answer3,
+            latestAssessment.answer4,
+            latestAssessment.answer5,
+            latestAssessment.answer6,
+            latestAssessment.answer7,
+            latestAssessment.answer8,
+        ].filter(Boolean).length
+        : 0;
+
+    const maxDoshaScore = (answeredCount || 8) * 3;
+    const imageVersion = Date.now();
+
+    const responsePatient = {
+        ...patient,
+        profileImageUrl: patient.profileImageMimeType
+            ? `/api/profile/patient/${patient.id}/image?v=${imageVersion}`
+            : null,
+        maxDoshaScore,
+    };
+
+    delete responsePatient.profileImageMimeType;
+
     return res
         .status(200)
-        .json(new ApiResponse(200, patient, 'Patient profile fetched successfully.'));
+        .json(new ApiResponse(200, responsePatient, 'Patient profile fetched successfully.'));
+});
+
+export const getPatientProfileImage = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!id) {
+        throw new ApiError(400, 'Patient ID is required.');
+    }
+
+    const patient = await prisma.patient.findUnique({
+        where: { id },
+        select: {
+            id: true,
+            profileImageData: true,
+            profileImageMimeType: true,
+        },
+    });
+
+    if (!patient) {
+        throw new ApiError(404, 'Patient not found.');
+    }
+
+    if (!patient.profileImageData || !patient.profileImageMimeType) {
+        throw new ApiError(404, 'Profile image not found.');
+    }
+
+    res.setHeader('Content-Type', patient.profileImageMimeType);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return res.status(200).send(Buffer.from(patient.profileImageData));
 });
 
 export const getDoctorProfile = asyncHandler(async (req, res) => {
@@ -146,6 +233,8 @@ export const updatePatientProfile = asyncHandler(async (req, res) => {
         gender,
         bloodGroup,
         dateOfBirth,
+        profileImageBase64,
+        profileImageMimeType,
         dietaryPref,
         allergies,
         healthGoals,
@@ -197,32 +286,83 @@ export const updatePatientProfile = asyncHandler(async (req, res) => {
             : currentClinicalData.chronicConditions || [],
     };
 
+    let nextProfileImageData;
+    let nextProfileImageMimeType;
+
+    if (profileImageBase64 && profileImageMimeType) {
+        try {
+            nextProfileImageData = Buffer.from(String(profileImageBase64), 'base64');
+        } catch (_error) {
+            throw new ApiError(400, 'Invalid profile image payload.');
+        }
+
+        if (nextProfileImageData.length > 2 * 1024 * 1024) {
+            throw new ApiError(400, 'Profile image is too large. Max allowed size is 2MB.');
+        }
+
+        nextProfileImageMimeType = String(profileImageMimeType);
+    }
+
+    const updateData = {
+        name: typeof name === 'string' ? name.trim() : existingPatient.name,
+        phoneNumber:
+            typeof phoneNumber === 'string' && phoneNumber.trim().length > 0
+                ? phoneNumber.trim()
+                : existingPatient.phoneNumber,
+        gender: typeof gender === 'string' ? gender : existingPatient.gender,
+        bloodGroup:
+            typeof bloodGroup === 'string' && bloodGroup.trim().length > 0
+                ? bloodGroup.trim().toUpperCase()
+                : existingPatient.bloodGroup,
+        dietaryPref: typeof dietaryPref === 'string' ? dietaryPref : existingPatient.dietaryPref,
+        allergies: Array.isArray(allergies)
+            ? allergies.map((item) => String(item).trim()).filter(Boolean)
+            : existingPatient.allergies,
+        dateOfBirth: parsedDob,
+        age: computedAge,
+        clinicalData: nextClinicalData,
+    };
+
+    if (nextProfileImageData && nextProfileImageMimeType) {
+        updateData.profileImageData = nextProfileImageData;
+        updateData.profileImageMimeType = nextProfileImageMimeType;
+    }
+
     const updatedPatient = await prisma.patient.update({
         where: { id },
-        data: {
-            name: typeof name === 'string' ? name.trim() : existingPatient.name,
-            phoneNumber:
-                typeof phoneNumber === 'string' && phoneNumber.trim().length > 0
-                    ? phoneNumber.trim()
-                    : existingPatient.phoneNumber,
-            gender: typeof gender === 'string' ? gender : existingPatient.gender,
-            bloodGroup:
-                typeof bloodGroup === 'string' && bloodGroup.trim().length > 0
-                    ? bloodGroup.trim().toUpperCase()
-                    : existingPatient.bloodGroup,
-            dietaryPref: typeof dietaryPref === 'string' ? dietaryPref : existingPatient.dietaryPref,
-            allergies: Array.isArray(allergies)
-                ? allergies.map((item) => String(item).trim()).filter(Boolean)
-                : existingPatient.allergies,
-            dateOfBirth: parsedDob,
-            age: computedAge,
-            clinicalData: nextClinicalData,
+        data: updateData,
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            phoneNumber: true,
+            age: true,
+            dateOfBirth: true,
+            gender: true,
+            bloodGroup: true,
+            prakriti: true,
+            vikriti: true,
+            dietaryPref: true,
+            allergies: true,
+            clinicalData: true,
+            profileImageData: true,
+            profileImageMimeType: true,
         },
     });
 
+    const responsePayload = {
+        ...updatedPatient,
+        profileImageUrl: updatedPatient.profileImageMimeType
+            ? `/api/profile/patient/${updatedPatient.id}/image?v=${Date.now()}`
+            : null,
+    };
+
+    delete responsePayload.profileImageData;
+    delete responsePayload.profileImageMimeType;
+
     return res
         .status(200)
-        .json(new ApiResponse(200, updatedPatient, 'Patient profile updated successfully.'));
+        .json(new ApiResponse(200, responsePayload, 'Patient profile updated successfully.'));
 });
 
 export const uploadPatientReport = asyncHandler(async (req, res) => {
@@ -274,4 +414,36 @@ export const uploadPatientReport = asyncHandler(async (req, res) => {
     return res
         .status(201)
         .json(new ApiResponse(201, report, 'Patient report uploaded successfully.'));
+});
+
+export const downloadPatientReport = asyncHandler(async (req, res) => {
+    const { id, reportId } = req.params;
+
+    if (!id || !reportId) {
+        throw new ApiError(400, 'Patient ID and report ID are required.');
+    }
+
+    const report = await prisma.patientReport.findFirst({
+        where: {
+            id: reportId,
+            patientId: id,
+        },
+        select: {
+            fileName: true,
+            mimeType: true,
+            fileData: true,
+        },
+    });
+
+    if (!report) {
+        throw new ApiError(404, 'Report not found.');
+    }
+
+    res.setHeader('Content-Type', report.mimeType || 'application/octet-stream');
+    res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${(report.fileName || 'report').replace(/"/g, '')}"`
+    );
+
+    return res.status(200).send(Buffer.from(report.fileData));
 });
