@@ -1,5 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  usePatientProfile,
+  useUpdatePatientProfile,
+  useUploadPatientReport,
+} from "@/hooks/useProfile";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   Heart,
   BarChart3,
@@ -47,7 +54,7 @@ import {
 } from "recharts";
 
 // Mock data (updated with array for allergies)
-const mockProfile = {
+const defaultProfile = {
   name: "Priya Sharma",
   age: 34,
   gender: "Female",
@@ -128,6 +135,94 @@ const staggerContainer = {
 };
 
 export default function PatientProfile() {
+  const { toast } = useToast();
+  const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
+  const patientId = loggedInUser?.id || "";
+  const patientEmail = loggedInUser?.email || "";
+  const { data: patientProfileData, isLoading, isError } = usePatientProfile(patientId, patientEmail);
+  const updatePatientProfileMutation = useUpdatePatientProfile();
+  const uploadPatientReportMutation = useUploadPatientReport();
+
+  const profilePayload: any = (patientProfileData as any)?.data || patientProfileData || {};
+  const latestAssessment = Array.isArray(profilePayload?.assessments)
+    ? profilePayload.assessments[0]
+    : null;
+  const clinicalData = profilePayload?.clinicalData && typeof profilePayload.clinicalData === "object"
+    ? profilePayload.clinicalData
+    : {};
+
+  const weight = Number(clinicalData?.weight ?? 0) || 0;
+  const height = Number(clinicalData?.height ?? 0) || 0;
+  const bmi = height > 0 ? Number((weight / ((height / 100) * (height / 100))).toFixed(1)) : 0;
+
+  const appointments = Array.isArray(profilePayload?.appointments)
+    ? profilePayload.appointments
+    : [];
+  const completedAppointments = appointments.filter((appointment: any) => appointment?.status === "COMPLETED").length;
+  const compliance = appointments.length > 0 ? Math.round((completedAppointments / appointments.length) * 100) : 0;
+
+  const doshaScores = [
+    { dosha: "Vata", score: Number(latestAssessment?.vataScore ?? profilePayload?.vataScore ?? 0) },
+    { dosha: "Pitta", score: Number(latestAssessment?.pittaScore ?? profilePayload?.pittaScore ?? 0) },
+    { dosha: "Kapha", score: Number(latestAssessment?.kaphaScore ?? profilePayload?.kaphaScore ?? 0) },
+  ];
+
+  const recentActivity = appointments.slice(0, 5).map((appointment: any) => ({
+    type: "appointment",
+    label: `${appointment?.doctor?.name || "Doctor consultation"} appointment`,
+    date: appointment?.scheduledAt
+      ? new Date(appointment.scheduledAt).toISOString().split("T")[0]
+      : "-",
+    status:
+      appointment?.status === "COMPLETED"
+        ? "on-plan"
+        : appointment?.status === "CANCELLED"
+          ? "off-plan"
+          : "positive",
+    icon:
+      appointment?.status === "COMPLETED"
+        ? "CheckCircle"
+        : appointment?.status === "CANCELLED"
+          ? "XCircle"
+          : "Award",
+  }));
+
+  const mockProfile = {
+    ...defaultProfile,
+    name: profilePayload?.name || loggedInUser?.name || defaultProfile.name,
+    age: profilePayload?.age ?? defaultProfile.age,
+    gender: profilePayload?.gender || "Not specified",
+    prakriti: profilePayload?.prakriti || "Not Assessed",
+    bmi: bmi || defaultProfile.bmi,
+    weight: weight || defaultProfile.weight,
+    height: height || defaultProfile.height,
+    email: profilePayload?.email || loggedInUser?.email || defaultProfile.email,
+    phone: profilePayload?.phoneNumber || defaultProfile.phone,
+    dietary_habits: profilePayload?.dietaryPref || "Not specified",
+    allergies: Array.isArray(profilePayload?.allergies) ? profilePayload.allergies : [],
+    chronic_conditions: Array.isArray(clinicalData?.chronicConditions) ? clinicalData.chronicConditions : ["None"],
+    goals: Array.isArray(clinicalData?.healthGoals) ? clinicalData.healthGoals : [],
+    compliance,
+    streak: completedAppointments,
+    doshaScores,
+    recentActivity: recentActivity.length ? recentActivity : defaultProfile.recentActivity,
+    bloodGroup: profilePayload?.bloodGroup || "Not specified",
+    vikriti: profilePayload?.vikriti || "Not specified",
+    languages: ["English"],
+  };
+
+  const persistedReports = Array.isArray(profilePayload?.reports)
+    ? profilePayload.reports.map((report: any) => ({
+        name: report.fileName,
+        summary:
+          report.summary ||
+          "Analysis complete: Report uploaded and stored successfully.",
+        date: report.createdAt
+          ? new Date(report.createdAt).toLocaleDateString()
+          : "-",
+      }))
+    : [];
+
   const [activeTab, setActiveTab] = useState<"overview" | "activity" | "history">("overview");
 
   // Patient History States
@@ -137,64 +232,280 @@ export default function PatientProfile() {
   
   const [newAllergy, setNewAllergy] = useState("");
   const [newCondition, setNewCondition] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    phoneNumber: "",
+    gender: "",
+    bloodGroup: "",
+    dateOfBirth: "",
+    dietaryPref: "",
+    allergies: "",
+    healthGoals: "",
+    chronicConditions: "",
+    weight: "",
+    height: "",
+  });
+
+  useEffect(() => {
+    setAllergies(mockProfile.allergies);
+    setConditions(mockProfile.chronic_conditions);
+
+    const existingDob = profilePayload?.dateOfBirth
+      ? new Date(profilePayload.dateOfBirth).toISOString().split("T")[0]
+      : "";
+    const currentClinicalData =
+      profilePayload?.clinicalData && typeof profilePayload.clinicalData === "object"
+        ? profilePayload.clinicalData
+        : {};
+
+    setEditForm({
+      name: profilePayload?.name || "",
+      phoneNumber: profilePayload?.phoneNumber || "",
+      gender: profilePayload?.gender || "",
+      bloodGroup: profilePayload?.bloodGroup || "",
+      dateOfBirth: existingDob,
+      dietaryPref: profilePayload?.dietaryPref || "",
+      allergies: Array.isArray(profilePayload?.allergies)
+        ? profilePayload.allergies.join(", ")
+        : "",
+      healthGoals: Array.isArray(currentClinicalData?.healthGoals)
+        ? currentClinicalData.healthGoals.join(", ")
+        : "",
+      chronicConditions: Array.isArray(currentClinicalData?.chronicConditions)
+        ? currentClinicalData.chronicConditions.join(", ")
+        : "",
+      weight:
+        currentClinicalData?.weight !== undefined && currentClinicalData?.weight !== null
+          ? String(currentClinicalData.weight)
+          : "",
+      height:
+        currentClinicalData?.height !== undefined && currentClinicalData?.height !== null
+          ? String(currentClinicalData.height)
+          : "",
+    });
+
+    setReports(persistedReports);
+  }, [patientProfileData]);
+
+  const handleSaveProfile = () => {
+    if (!patientId) return;
+
+    if (!editForm.dateOfBirth) {
+      toast({
+        title: "Validation Error",
+        description: "Date of birth is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updatePatientProfileMutation.mutate(
+      {
+        id: patientId,
+        payload: {
+          name: editForm.name,
+          phoneNumber: editForm.phoneNumber,
+          gender: editForm.gender,
+          bloodGroup: editForm.bloodGroup,
+          dateOfBirth: editForm.dateOfBirth,
+          dietaryPref: editForm.dietaryPref,
+          allergies: editForm.allergies
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          healthGoals: editForm.healthGoals
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          chronicConditions: editForm.chronicConditions
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          weight: editForm.weight ? Number(editForm.weight) : null,
+          height: editForm.height ? Number(editForm.height) : null,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Profile Updated",
+            description: "Your profile changes were saved successfully.",
+          });
+          setShowEditModal(false);
+        },
+        onError: (error: any) => {
+          toast({
+            title: "Update Failed",
+            description: error?.message || "Could not update profile.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
+  };
+
+  const persistHistory = (
+    nextAllergies: string[],
+    nextConditions: string[]
+  ) => {
+    if (!patientId) return;
+
+    updatePatientProfileMutation.mutate(
+      {
+        id: patientId,
+        payload: {
+          allergies: nextAllergies,
+          chronicConditions: nextConditions,
+        },
+      },
+      {
+        onError: (error: any) => {
+          toast({
+            title: "History Update Failed",
+            description: error?.message || "Could not save patient history.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6 space-y-6">
+        <Skeleton className="h-10 w-60" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || (!patientId && !patientEmail)) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6">
+        <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 p-4">
+          Unable to load patient profile.
+        </div>
+      </div>
+    );
+  }
 
   // Patient History Handlers
   const handleAddAllergy = () => {
     if (!newAllergy.trim()) return;
-    setAllergies([...allergies, newAllergy.trim()]);
+    const nextAllergies = [...allergies, newAllergy.trim()];
+    setAllergies(nextAllergies);
+    persistHistory(nextAllergies, conditions);
     setNewAllergy("");
   };
 
   const handleRemoveAllergy = (index: number) => {
-    setAllergies(allergies.filter((_, i) => i !== index));
+    const nextAllergies = allergies.filter((_, i) => i !== index);
+    setAllergies(nextAllergies);
+    persistHistory(nextAllergies, conditions);
   };
 
   const handleAddCondition = () => {
     if (!newCondition.trim()) return;
-    setConditions([...conditions, newCondition.trim()]);
+    const sanitizedCurrent = conditions.filter((condition) => condition !== "None");
+    const nextConditions = [...sanitizedCurrent, newCondition.trim()];
+    setConditions(nextConditions);
+    persistHistory(allergies, nextConditions);
     setNewCondition("");
   };
 
   const handleRemoveCondition = (index: number) => {
-    setConditions(conditions.filter((_, i) => i !== index));
+    const nextConditionsRaw = conditions.filter((_, i) => i !== index);
+    const nextConditions = nextConditionsRaw.length > 0 ? nextConditionsRaw : ["None"];
+    setConditions(nextConditions);
+    persistHistory(allergies, nextConditions.filter((condition) => condition !== "None"));
   };
 
   const handleUploadReport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const newReport = {
-      name: file.name,
-      summary: "AI analyzing report...",
-      date: new Date().toLocaleDateString(),
+    if (!patientId) {
+      toast({
+        title: "Upload Failed",
+        description: "Patient ID is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        toast({
+          title: "Upload Failed",
+          description: "Unable to read selected file.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const fileBase64 = result.includes(",") ? result.split(",")[1] : result;
+
+      uploadPatientReportMutation.mutate(
+        {
+          id: patientId,
+          payload: {
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            fileBase64,
+            summary:
+              "Analysis complete: No critical abnormalities detected. Recommended: Follow up on Vitamin D levels and maintain current diet plan.",
+          },
+        },
+        {
+          onSuccess: () => {
+            toast({
+              title: "Report Uploaded",
+              description: "Medical report stored in database successfully.",
+            });
+          },
+          onError: (error: any) => {
+            toast({
+              title: "Upload Failed",
+              description: error?.message || "Could not upload report.",
+              variant: "destructive",
+            });
+          },
+        }
+      );
     };
 
-    setReports([...reports, newReport]);
-
-    // Simulate AI analysis
-    setTimeout(() => {
-      setReports((prev) =>
-        prev.map((r) =>
-          r.name === file.name
-            ? {
-                ...r,
-                summary:
-                  "Analysis complete: No critical abnormalities detected. Recommended: Follow up on Vitamin D levels and maintain current diet plan.",
-              }
-            : r
-        )
-      );
-    }, 2000);
+    reader.readAsDataURL(file);
   };
 
-  // Get dosha color
-  const getDoshaColor = (dosha: string) => {
-    switch(dosha) {
-      case "Vata": return "purple";
-      case "Pitta": return "amber";
-      case "Kapha": return "emerald";
-      default: return "blue";
-    }
+  const doshaStyleMap: Record<string, { label: string; value: string; track: string; fill: string }> = {
+    Vata: {
+      label: "text-violet-700",
+      value: "text-violet-600",
+      track: "bg-violet-100",
+      fill: "bg-violet-500",
+    },
+    Pitta: {
+      label: "text-amber-700",
+      value: "text-amber-600",
+      track: "bg-amber-100",
+      fill: "bg-amber-500",
+    },
+    Kapha: {
+      label: "text-emerald-700",
+      value: "text-emerald-600",
+      track: "bg-emerald-100",
+      fill: "bg-emerald-500",
+    },
   };
 
   return (
@@ -238,6 +549,7 @@ export default function PatientProfile() {
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 className="px-3 sm:px-4 py-2 bg-gradient-to-r from-emerald-500 to-[#10B981] text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all flex items-center gap-2 text-sm sm:text-base"
+                onClick={() => setShowEditModal(true)}
               >
                 <Edit3 className="w-4 h-4" />
                 Edit Profile
@@ -284,6 +596,145 @@ export default function PatientProfile() {
             </div>
           </div>
         </motion.div>
+
+        {showEditModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-gray-900">Edit Profile</h3>
+                <button
+                  className="text-gray-500 hover:text-gray-800"
+                  onClick={() => setShowEditModal(false)}
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-600">Full Name</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Phone Number</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.phoneNumber}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, phoneNumber: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Gender</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.gender}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, gender: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Blood Group</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.bloodGroup}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, bloodGroup: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Date of Birth</label>
+                  <input
+                    type="date"
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.dateOfBirth}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Age (Auto-calculated)</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2 bg-gray-100"
+                    value={String(mockProfile.age || "")}
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Weight (kg)</label>
+                  <input
+                    type="number"
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.weight}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, weight: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600">Height (cm)</label>
+                  <input
+                    type="number"
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.height}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, height: e.target.value }))}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-sm text-gray-600">Dietary Preference</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.dietaryPref}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, dietaryPref: e.target.value }))}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-sm text-gray-600">Allergies (comma separated)</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.allergies}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, allergies: e.target.value }))}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-sm text-gray-600">Health Goals (comma separated)</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.healthGoals}
+                    onChange={(e) => setEditForm((prev) => ({ ...prev, healthGoals: e.target.value }))}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-sm text-gray-600">Chronic Conditions (comma separated)</label>
+                  <input
+                    className="mt-1 w-full border rounded-lg px-3 py-2"
+                    value={editForm.chronicConditions}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, chronicConditions: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="md:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  Prakriti, Vikriti, and dosha scores are system-calculated and cannot be edited.
+                </div>
+              </div>
+
+              <div className="p-5 border-t border-gray-200 flex justify-end gap-3">
+                <button
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700"
+                  onClick={() => setShowEditModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-[#10B981] text-white"
+                  onClick={handleSaveProfile}
+                  disabled={updatePatientProfileMutation.isPending}
+                >
+                  {updatePatientProfileMutation.isPending ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Profile Header Card */}
         <motion.div
@@ -469,9 +920,11 @@ export default function PatientProfile() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <InfoRow label="Gender" value={mockProfile.gender} />
+                      <InfoRow label="Blood Group" value={mockProfile.bloodGroup} />
                       <InfoRow label="Weight" value={`${mockProfile.weight} kg`} />
                       <InfoRow label="Height" value={`${mockProfile.height} cm`} />
                       <InfoRow label="Dietary Habits" value={mockProfile.dietary_habits} />
+                      <InfoRow label="Vikriti" value={mockProfile.vikriti} />
                       
                       <div>
                         <span className="text-sm font-medium text-gray-700">Allergies:</span>
@@ -504,7 +957,7 @@ export default function PatientProfile() {
                       <div>
                         <span className="text-sm font-medium text-gray-700">Goals:</span>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {mockProfile.goals.map((g) => (
+                          {mockProfile.goals.map((g: string) => (
                             <span
                               key={g}
                               className="px-3 py-1 bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-800 rounded-full text-xs font-medium border border-emerald-200"
@@ -542,8 +995,8 @@ export default function PatientProfile() {
                           </RadarChart>
                         </ResponsiveContainer>
                       </div>
-                      <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3" /> Prakriti Dosha Profile
+                      <p className="text-xs text-gray-400 mt-3 text-center w-full">
+                        Prakriti Dosha Profile
                       </p>
                     </div>
                   </div>
@@ -551,21 +1004,29 @@ export default function PatientProfile() {
                   {/* Dosha Details */}
                   <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     {mockProfile.doshaScores.map((dosha) => {
-                      const color = getDoshaColor(dosha.dosha);
+                      const styles =
+                        doshaStyleMap[dosha.dosha] || {
+                          label: "text-slate-700",
+                          value: "text-slate-600",
+                          track: "bg-slate-100",
+                          fill: "bg-slate-500",
+                        };
+                      const normalizedScore = Math.max(0, Math.min(100, Number(dosha.score) || 0));
+                      const barWidth = normalizedScore > 0 ? Math.max(normalizedScore, 4) : 0;
                       return (
                         <div key={dosha.dosha} className="text-center">
-                          <div className={`text-sm font-medium text-${color}-700 mb-1`}>
+                          <div className={`text-sm font-medium mb-1 ${styles.label}`}>
                             {dosha.dosha}
                           </div>
-                          <div className={`text-2xl font-bold text-${color}-600`}>
+                          <div className={`text-2xl font-bold ${styles.value}`}>
                             {dosha.score}%
                           </div>
-                          <div className={`w-full h-1.5 bg-${color}-100 rounded-full mt-2`}>
+                          <div className={`w-full h-1.5 rounded-full mt-2 ${styles.track}`}>
                             <motion.div
                               initial={{ width: 0 }}
-                              animate={{ width: `${dosha.score}%` }}
+                              animate={{ width: `${barWidth}%` }}
                               transition={{ duration: 1, delay: 0.5 }}
-                              className={`h-full rounded-full bg-${color}-500`}
+                              className={`h-full rounded-full ${styles.fill}`}
                             />
                           </div>
                         </div>
@@ -655,7 +1116,7 @@ export default function PatientProfile() {
                 </div>
 
                 <div className="space-y-4 sm:space-y-6">
-                  {mockProfile.recentActivity.map((a, i) => {
+                  {mockProfile.recentActivity.map((a: any, i: number) => {
                     const Icon = activityIcons[a.icon as ActivityIconKey] || Flame;
                     const statusColor = 
                       a.status === "on-plan" ? "emerald" :

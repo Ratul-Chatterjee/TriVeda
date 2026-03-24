@@ -44,7 +44,8 @@ import { useRef } from "react";
 
 interface PatientFormData {
   name: string;
-  age: string;
+  dateOfBirth: string;
+  bloodGroup: string;
   gender: string;
   weight: string;
   height: string;
@@ -70,7 +71,8 @@ export default function PatientRegistration({
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<PatientFormData>({
     name: "",
-    age: "",
+    dateOfBirth: "",
+    bloodGroup: "",
     gender: "",
     weight: "",
     height: "",
@@ -95,10 +97,19 @@ export default function PatientRegistration({
     if (currentStep === 1) {
       if (!formData.name.trim()) errors.name = "Full name is required";
 
-      const ageValue = Number(formData.age);
-      if (!formData.age || Number.isNaN(ageValue) || ageValue <= 0) {
-        errors.age = "Valid age is required";
+      if (!formData.dateOfBirth) {
+        errors.dateOfBirth = "Date of birth is required";
+      } else {
+        const dob = new Date(formData.dateOfBirth);
+        const today = new Date();
+        if (Number.isNaN(dob.getTime())) {
+          errors.dateOfBirth = "Enter a valid date of birth";
+        } else if (dob > today) {
+          errors.dateOfBirth = "Date of birth cannot be in the future";
+        }
       }
+
+      if (!formData.bloodGroup) errors.bloodGroup = "Blood group is required";
 
       if (!formData.gender) errors.gender = "Gender is required";
 
@@ -174,7 +185,8 @@ export default function PatientRegistration({
       patientRegisterMutation.mutate(
         {
           name: formData.name.trim(),
-          age: Number(formData.age),
+          dateOfBirth: formData.dateOfBirth,
+          bloodGroup: formData.bloodGroup,
           gender: formData.gender,
           weight: Number(formData.weight),
           height: Number(formData.height),
@@ -277,21 +289,48 @@ export default function PatientRegistration({
                 )}
               </div>
               <div>
-                <Label htmlFor="age" className="flex items-center gap-1 mb-1">
-                  <Calendar className="w-4 h-4 text-muted-foreground" /> Age *
+                <Label htmlFor="dateOfBirth" className="flex items-center gap-1 mb-1">
+                  <Calendar className="w-4 h-4 text-muted-foreground" /> Date of Birth *
                 </Label>
                 <Input
-                  id="age"
-                  data-testid="input-age"
-                  type="number"
-                  value={formData.age}
-                  onChange={(e) => handleInputChange("age", e.target.value)}
-                  placeholder="Age in years"
+                  id="dateOfBirth"
+                  data-testid="input-date-of-birth"
+                  type="date"
+                  value={formData.dateOfBirth}
+                  onChange={(e) =>
+                    handleInputChange("dateOfBirth", e.target.value)
+                  }
                 />
-                {stepErrors.age && (
-                  <p className="text-xs text-red-500 mt-1">{stepErrors.age}</p>
+                {stepErrors.dateOfBirth && (
+                  <p className="text-xs text-red-500 mt-1">{stepErrors.dateOfBirth}</p>
                 )}
               </div>
+            </div>
+            <div>
+              <Label htmlFor="bloodGroup" className="flex items-center gap-1 mb-1">
+                <HeartPulse className="w-4 h-4 text-muted-foreground" /> Blood Group *
+              </Label>
+              <Select
+                onValueChange={(value) => handleInputChange("bloodGroup", value)}
+                value={formData.bloodGroup}
+              >
+                <SelectTrigger data-testid="select-blood-group">
+                  <SelectValue placeholder="Select blood group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A+">A+</SelectItem>
+                  <SelectItem value="A-">A-</SelectItem>
+                  <SelectItem value="B+">B+</SelectItem>
+                  <SelectItem value="B-">B-</SelectItem>
+                  <SelectItem value="AB+">AB+</SelectItem>
+                  <SelectItem value="AB-">AB-</SelectItem>
+                  <SelectItem value="O+">O+</SelectItem>
+                  <SelectItem value="O-">O-</SelectItem>
+                </SelectContent>
+              </Select>
+              {stepErrors.bloodGroup && (
+                <p className="text-xs text-red-500 mt-1">{stepErrors.bloodGroup}</p>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

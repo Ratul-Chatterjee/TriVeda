@@ -33,6 +33,20 @@ const generateTokenAndSetCookie = (user, role, res) => {
     return token;
 };
 
+const computeAgeFromDob = (dob) => {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const dayDiff = today.getDate() - birthDate.getDate();
+
+    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        age -= 1;
+    }
+
+    return age;
+};
+
 // ==========================================
 // HOSPITAL STAFF LOGIN (B2B)
 // ==========================================
@@ -127,8 +141,9 @@ export const patientLogin = asyncHandler(async (req, res) => {
 export const patientRegister = asyncHandler(async (req, res) => {
     const {
         name,
-        age,
+        dateOfBirth,
         gender,
+        bloodGroup,
         weight,
         height,
         email,
@@ -140,8 +155,8 @@ export const patientRegister = asyncHandler(async (req, res) => {
         chronicConditions,
     } = req.body;
 
-    if (!name || !email || !password || !phone || !gender) {
-        throw new ApiError(400, "Name, email, password, phone, and gender are required.");
+    if (!name || !email || !password || !phone || !gender || !dateOfBirth || !bloodGroup) {
+        throw new ApiError(400, "Name, email, password, phone, gender, dateOfBirth, and bloodGroup are required.");
     }
 
     if (String(password).length < 8) {
@@ -149,6 +164,17 @@ export const patientRegister = asyncHandler(async (req, res) => {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    const parsedDob = new Date(dateOfBirth);
+    if (Number.isNaN(parsedDob.getTime())) {
+        throw new ApiError(400, "Invalid dateOfBirth.");
+    }
+    if (parsedDob > new Date()) {
+        throw new ApiError(400, "dateOfBirth cannot be in the future.");
+    }
+    const calculatedAge = computeAgeFromDob(parsedDob);
+    if (calculatedAge < 0) {
+        throw new ApiError(400, "Invalid dateOfBirth.");
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -179,8 +205,10 @@ export const patientRegister = asyncHandler(async (req, res) => {
                 name: String(name).trim(),
                 password: hashedPassword,
                 phoneNumber: String(phone).trim(),
-                age: age ? Number(age) : null,
+                age: calculatedAge,
+                dateOfBirth: parsedDob,
                 gender: String(gender),
+                bloodGroup: String(bloodGroup).trim().toUpperCase(),
                 dietaryPref: dietaryHabits || null,
                 allergies: parsedAllergies,
                 clinicalData,
@@ -193,8 +221,10 @@ export const patientRegister = asyncHandler(async (req, res) => {
                 email: normalizedEmail,
                 password: hashedPassword,
                 phoneNumber: String(phone).trim(),
-                age: age ? Number(age) : null,
+                age: calculatedAge,
+                dateOfBirth: parsedDob,
                 gender: String(gender),
+                bloodGroup: String(bloodGroup).trim().toUpperCase(),
                 dietaryPref: dietaryHabits || null,
                 allergies: parsedAllergies,
                 clinicalData,

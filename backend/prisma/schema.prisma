@@ -15,6 +15,7 @@ model Patient {
   name            String
   isAppRegistered Boolean       @default(false)
   age             Int?
+  dateOfBirth     DateTime?
   gender          String?
   bloodGroup      String?
   prakriti        String?
@@ -28,6 +29,22 @@ model Patient {
   createdAt       DateTime      @default(now())
   appointments    Appointment[]
   assessments     PrakritiAssessment[]
+  reports         PatientReport[]
+}
+
+model PatientReport {
+  id         String   @id @default(uuid())
+  patientId  String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  fileData   Bytes
+  summary    String?
+  createdAt  DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, createdAt])
 }
 
 model PrakritiAssessment {

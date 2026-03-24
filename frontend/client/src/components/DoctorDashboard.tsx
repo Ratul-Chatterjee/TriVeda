@@ -59,6 +59,8 @@ import {
   Area,
 } from "recharts";
 import GuidelineModal from "./GuidelineModal";
+import { useDoctorProfile } from "@/hooks/useProfile";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AppointmentBooking,
   categoryLabelMap,
@@ -215,6 +217,16 @@ export default function DoctorDashboard({
   onNavigate,
   patientId,
 }: DoctorDashboardProps) {
+  const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
+  const doctorId =
+    loggedInUser?.portal === "DOCTOR" || loggedInUser?.role === "DOCTOR"
+      ? loggedInUser?.id || ""
+      : "";
+  const { data: doctorProfileData, isLoading: isDoctorProfileLoading } = useDoctorProfile(doctorId);
+  const doctorPayload: any = (doctorProfileData as any)?.data || doctorProfileData || {};
+  const doctorDisplayName = doctorPayload?.name || loggedInUser?.name || "Doctor";
+  const doctorSpecialty = doctorPayload?.doctorProfile?.specialty || "Ayurvedic Doctor";
+
   const [sharedAppointments, setSharedAppointments] = useState<AppointmentBooking[]>([]);
   // Reschedule Modal State
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -781,6 +793,15 @@ export default function DoctorDashboard({
     );
   }
 
+  if (isDoctorProfileLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6 space-y-4">
+        <Skeleton className="h-16 w-full rounded-xl" />
+        <Skeleton className="h-80 w-full rounded-xl" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -793,10 +814,10 @@ export default function DoctorDashboard({
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900 break-words">
-                  Hello Lifeline
+                  Hello {doctorDisplayName}
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-600 break-words">
-                  Dr. Anjali Verma - Senior Ayurvedic Doctor
+                  Dr. {doctorDisplayName} - {doctorSpecialty}
                 </p>
               </div>
             </div>

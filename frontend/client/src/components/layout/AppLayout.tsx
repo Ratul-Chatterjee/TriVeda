@@ -74,7 +74,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <ul className="space-y-2">
                 <li>
                   <Link href="/patient/dashboard">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/dashboard"
@@ -98,12 +98,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <DashboardIcon fontSize="small" />
                       <span className="ml-3">Dashboard</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/diet-charts">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/diet-charts"
@@ -127,12 +127,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <RestaurantMenuIcon fontSize="small" />
                       <span className="ml-3">My Diet Charts</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/health-records">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/health-records"
@@ -156,12 +156,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <AssignmentIcon fontSize="small" />
                       <span className="ml-3">Health Records</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/reports">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/reports"
@@ -185,12 +185,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <AssessmentIcon fontSize="small" />
                       <span className="ml-3">Reports</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/appointments">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/appointments"
@@ -214,12 +214,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <LocalHospitalIcon fontSize="small" />
                       <span className="ml-3">Appointments</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/profile">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/profile"
@@ -243,12 +243,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <PersonIcon fontSize="small" />
                       <span className="ml-3">Profile</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li>
                   <Link href="/patient/settings">
-                    <motion.a
+                    <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
                         location === "/patient/settings"
@@ -272,7 +272,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <SettingsIcon fontSize="small" />
                       <span className="ml-3">Settings</span>
-                    </motion.a>
+                    </motion.div>
                   </Link>
                 </li>
                 <li className="pt-4 mt-4 border-t border-sidebar-border md:hidden">
