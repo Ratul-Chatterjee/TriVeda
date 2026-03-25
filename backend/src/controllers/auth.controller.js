@@ -255,3 +255,71 @@ export const logout = asyncHandler(async (req, res) => {
 
     return res.status(200).json(new ApiResponse(200, {}, "Logged out successfully."));
 });
+
+export const changePassword = asyncHandler(async (req, res) => {
+    const { staffId, patientId, currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        throw new ApiError(400, 'currentPassword and newPassword are required.');
+    }
+
+    if (String(newPassword).length < 8) {
+        throw new ApiError(400, 'New password must be at least 8 characters long.');
+    }
+
+    if (currentPassword === newPassword) {
+        throw new ApiError(400, 'New password must be different from current password.');
+    }
+
+    if (!staffId && !patientId) {
+        throw new ApiError(400, 'staffId or patientId is required.');
+    }
+
+    const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+
+    if (staffId) {
+        const staff = await prisma.hospitalStaff.findUnique({ where: { id: staffId } });
+        if (!staff) {
+            throw new ApiError(404, 'Staff member not found.');
+        }
+
+        const isPasswordValid = await bcrypt
+            .compare(String(currentPassword), staff.password)
+            .catch(() => String(currentPassword) === staff.password);
+
+        if (!isPasswordValid) {
+            throw new ApiError(401, 'Current password is incorrect.');
+        }
+
+        await prisma.hospitalStaff.update({
+            where: { id: staffId },
+            data: { password: hashedPassword },
+        });
+
+        return res
+            .status(200)
+            .json(new ApiResponse(200, { staffId }, 'Password updated successfully.'));
+    }
+
+    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    if (!patient) {
+        throw new ApiError(404, 'Patient not found.');
+    }
+
+    const isPasswordValid = await bcrypt
+        .compare(String(currentPassword), patient.password || '')
+        .catch(() => String(currentPassword) === patient.password);
+
+    if (!isPasswordValid) {
+        throw new ApiError(401, 'Current password is incorrect.');
+    }
+
+    await prisma.patient.update({
+        where: { id: patientId },
+        data: { password: hashedPassword },
+    });
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, { patientId }, 'Password updated successfully.'));
+});

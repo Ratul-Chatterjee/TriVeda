@@ -348,8 +348,8 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTab, setSelectedTab] = useState("overview");
   const [addUserOpen, setAddUserOpen] = useState(false);
-  const [addUserType, setAddUserType] = useState<"Doctor" | "patient">(
-    "Doctor",
+  const [addUserType, setAddUserType] = useState<"staff" | "patient">(
+    "staff",
   );
   const [notifications, setNotifications] = useState([
     {
@@ -379,10 +379,13 @@ export default function AdminDashboard() {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    role: "DOCTOR",
     department: "",
     specialization: "",
     phone: "",
   });
+  const [emailAvailability, setEmailAvailability] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [emailMessage, setEmailMessage] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [departments, setDepartments] = useState<Array<{ id: string; name: string; description?: string }>>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
@@ -441,19 +444,87 @@ export default function AdminDashboard() {
   );
 
   const handleAddUser = (type: string) => {
-    setAddUserType(type === "patient" ? "patient" : "Doctor");
+    setAddUserType(type === "patient" ? "patient" : "staff");
+    setGeneratedPassword(null);
+    setEmailAvailability("idle");
+    setEmailMessage("");
+    setForm({ name: "", email: "", role: "DOCTOR", specialization: "", department: "", phone: "" });
     setAddUserOpen(true);
   };
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const handleAddUserOpenChange = (open: boolean) => {
+    setAddUserOpen(open);
+    if (!open) {
+      setGeneratedPassword(null);
+      setEmailAvailability("idle");
+      setEmailMessage("");
+    }
   };
 
-  const handleUserSubmit = (e: React.FormEvent) => {
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextValue = e.target.value;
+    setForm({ ...form, [e.target.name]: nextValue });
+
+    if (e.target.name === "email") {
+      setEmailAvailability("idle");
+      setEmailMessage("");
+    }
+  };
+
+  const handleRoleChange = (role: string) => {
+    setForm((prev) => ({
+      ...prev,
+      role,
+      department: role === "DOCTOR" ? prev.department : "",
+      specialization: role === "DOCTOR" ? prev.specialization : "",
+    }));
+  };
+
+  const checkEmailAvailability = async () => {
+    const email = form.email.trim();
+    if (!email) {
+      setEmailAvailability("idle");
+      setEmailMessage("");
+      return false;
+    }
+
+    try {
+      setEmailAvailability("checking");
+      const response: any = await authApi.checkStaffEmailAvailability(email);
+      if (response?.exists) {
+        setEmailAvailability("taken");
+        setEmailMessage("This email is already registered.");
+        return false;
+      }
+
+      setEmailAvailability("available");
+      setEmailMessage("Email is available.");
+      return true;
+    } catch (error: any) {
+      setEmailAvailability("idle");
+      setEmailMessage(error?.message || "Could not validate email right now.");
+      return false;
+    }
+  };
+
+  const handleUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (addUserType === "Doctor") {
-      if (!form.department) {
+    if (addUserType === "staff") {
+      const role = String(form.role || "DOCTOR").toUpperCase();
+
+      const emailOk = await checkEmailAvailability();
+      if (!emailOk) {
+        alert("Email is already registered or cannot be validated. Please check and try again.");
+        return;
+      }
+
+      if (role === "DOCTOR" && !form.department) {
         alert("Please select a department");
+        return;
+      }
+
+      if (role === "DOCTOR" && !form.specialization.trim()) {
+        alert("Please enter specialization for doctor role");
         return;
       }
 
@@ -468,8 +539,9 @@ export default function AdminDashboard() {
       createDoctorMutation.mutate({
         name: form.name,
         email: form.email,
-        specialization: form.specialization,
-        departmentId: form.department,
+        role,
+        specialization: role === "DOCTOR" ? form.specialization : undefined,
+        departmentId: role === "DOCTOR" ? form.department : undefined,
         hospitalId: resolvedHospitalId,
       });
     } else {
@@ -514,7 +586,7 @@ export default function AdminDashboard() {
   };
 
   const createDoctorMutation = useMutation({
-    mutationFn: authApi.createDoctor,
+    mutationFn: authApi.createStaff,
     onSuccess: (data: any) => {
       // Stop showing the form and show the password instead
       setGeneratedPassword(data.temporaryPassword);
@@ -738,7 +810,7 @@ export default function AdminDashboard() {
                   size="sm"
                   className="bg-gradient-to-r from-[#1F5C3F] to-[#10B981] hover:from-[#1F5C3F]/90 hover:to-[#10B981]/90 text-white shadow-lg hover:shadow-xl rounded-xl transition-all duration-300"
                   data-testid="button-add-user"
-                  onClick={() => setAddUserOpen(true)}
+                  onClick={() => handleAddUser("staff")}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   <span className="hidden sm:inline">Add User</span>
@@ -920,11 +992,11 @@ export default function AdminDashboard() {
                         />
                       </div>
                       <Button
-                        onClick={() => handleAddUser("Doctor")}
+                        onClick={() => handleAddUser("staff")}
                         className="w-full sm:w-auto bg-gradient-to-r from-[#1F5C3F] to-[#10B981] hover:from-[#1F5C3F]/90 hover:to-[#10B981]/90 text-white shadow-lg hover:shadow-xl rounded-xl transition-all duration-300"
                       >
                         <Plus className="h-4 w-4 mr-2" />
-                        Add Doctor
+                        Add Staff
                       </Button>
                     </div>
                   </div>
@@ -1532,7 +1604,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Add User Modal */}
-      <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
+      <Dialog open={addUserOpen} onOpenChange={handleAddUserOpenChange}>
         <DialogContent className="max-w-md bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-0 shadow-2xl rounded-2xl">
           
           {/* THE NEW SUCCESS STATE UI */}
@@ -1541,10 +1613,10 @@ export default function AdminDashboard() {
               <DialogHeader>
                 <DialogTitle className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 flex items-center">
                   <CheckCircle className="h-6 w-6 mr-2" />
-                  Doctor Added Successfully!
+                  {form.role === "DOCTOR" ? "Doctor Added Successfully!" : "Staff Added Successfully!"}
                 </DialogTitle>
                 <DialogDescription className="text-gray-600 dark:text-gray-400">
-                  Please copy this temporary password and send it to Dr. {form.name}. They will need it for their first login.
+                  Please copy this temporary password and share it with {form.name}. They will need it for their first login.
                 </DialogDescription>
               </DialogHeader>
               
@@ -1560,7 +1632,9 @@ export default function AdminDashboard() {
                   onClick={() => {
                     setGeneratedPassword(null);
                     setAddUserOpen(false);
-                    setForm({ name: "", email: "", specialization: "", department: "", phone: "" });
+                    setEmailAvailability("idle");
+                    setEmailMessage("");
+                    setForm({ name: "", email: "", role: "DOCTOR", specialization: "", department: "", phone: "" });
                   }}
                   className="w-full bg-gradient-to-r from-[#1F5C3F] to-[#10B981] hover:from-[#1F5C3F]/90 hover:to-[#10B981]/90 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
                 >
@@ -1575,25 +1649,25 @@ export default function AdminDashboard() {
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
                 <Plus className="h-6 w-6 mr-2 text-[#1F5C3F]" />
-                Add New User
+                Add New Staff
               </DialogTitle>
               <DialogDescription className="text-gray-600 dark:text-gray-400">
-                Choose user type and fill the form to add a new user.
+                Choose staff role and fill the form to add a new staff member.
               </DialogDescription>
             </DialogHeader>
 
             <div className="mb-6">
               <RadioGroup
                 value={addUserType}
-                onValueChange={(v) => setAddUserType(v as "Doctor" | "patient")}
+                onValueChange={(v) => setAddUserType(v as "staff" | "patient")}
                 className="flex gap-6 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg mt-4"
               >
                 {/* ... keep your existing RadioGroup items here ... */}
                 <div className="flex-1">
-                  <RadioGroupItem value="Doctor" id="add-Doctor" className="peer sr-only" />
-                  <label htmlFor="add-Doctor" className="flex items-center justify-center p-2 text-sm font-medium rounded-md cursor-pointer peer-data-[state=checked]:bg-white peer-data-[state=checked]:dark:bg-gray-700 peer-data-[state=checked]:text-[#1F5C3F] peer-data-[state=checked]:shadow-sm transition-all">
+                  <RadioGroupItem value="staff" id="add-staff" className="peer sr-only" />
+                  <label htmlFor="add-staff" className="flex items-center justify-center p-2 text-sm font-medium rounded-md cursor-pointer peer-data-[state=checked]:bg-white peer-data-[state=checked]:dark:bg-gray-700 peer-data-[state=checked]:text-[#1F5C3F] peer-data-[state=checked]:shadow-sm transition-all">
                     <Stethoscope className="h-4 w-4 mr-2" />
-                    Doctor
+                    Staff
                   </label>
                 </div>
                 <div className="flex-1">
@@ -1615,7 +1689,12 @@ export default function AdminDashboard() {
 
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
-                <Input name="email" type="email" value={form.email} onChange={handleFormChange} placeholder="Enter email address" required className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20" />
+                <Input name="email" type="email" value={form.email} onChange={handleFormChange} onBlur={checkEmailAvailability} placeholder="Enter email address" required className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20" />
+                {emailMessage && (
+                  <p className={`text-xs ${emailAvailability === "taken" ? "text-red-600" : "text-emerald-600"}`}>
+                    {emailMessage}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -1623,16 +1702,36 @@ export default function AdminDashboard() {
                 <Input name="phone" value={form.phone} onChange={handleFormChange} placeholder="Enter phone number" className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20" />
               </div>
 
-              {addUserType === "Doctor" && (
+              {addUserType === "staff" && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                  <Select value={form.role} onValueChange={handleRoleChange}>
+                    <SelectTrigger className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20">
+                      <SelectValue placeholder="Select Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DOCTOR">Doctor</SelectItem>
+                      <SelectItem value="RECEPTIONIST">Receptionist</SelectItem>
+                      <SelectItem value="PHARMACIST">Pharmacist</SelectItem>
+                      <SelectItem value="NURSE">Nurse</SelectItem>
+                      <SelectItem value="THERAPIST">Therapist</SelectItem>
+                      <SelectItem value="BILLING">Billing</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {addUserType === "staff" && form.role === "DOCTOR" && (
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Specialization</label>
                   <Input name="specialization" value={form.specialization} onChange={handleFormChange} placeholder="Enter specialization (e.g. Heart Specialist)" required className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20" />
                 </div>
               )}
-              {addUserType === "Doctor" && (
+              {addUserType === "staff" && form.role === "DOCTOR" && (
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
-                  <Select required onValueChange={val => setForm({...form, department: val})}>
+                  <Select value={form.department} required onValueChange={val => setForm({...form, department: val})}>
                       <SelectTrigger className="rounded-xl border-gray-300 dark:border-gray-600 focus:border-[#10B981] focus:ring-[#10B981]/20">
                           <SelectValue placeholder="Select Department" />
                       </SelectTrigger>
@@ -1655,7 +1754,7 @@ export default function AdminDashboard() {
                 <Button type="button" variant="outline" onClick={() => setAddUserOpen(false)} className="rounded-xl">
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createDoctorMutation.isPending} className="bg-gradient-to-r from-[#1F5C3F] to-[#10B981] hover:from-[#1F5C3F]/90 hover:to-[#10B981]/90 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
+                <Button type="submit" disabled={createDoctorMutation.isPending || emailAvailability === "checking"} className="bg-gradient-to-r from-[#1F5C3F] to-[#10B981] hover:from-[#1F5C3F]/90 hover:to-[#10B981]/90 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
                   {createDoctorMutation.isPending ? "Adding..." : `Add ${addUserType.charAt(0).toUpperCase() + addUserType.slice(1)}`}
                 </Button>
               </DialogFooter>

@@ -193,12 +193,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     <motion.div
                       whileHover={{ scale: 1.02 }}
                       className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
-                        location === "/patient/appointments"
+                        location.startsWith("/patient/appointments")
                           ? "font-semibold text-primary"
                           : ""
                       }`}
                     >
-                      {location === "/patient/appointments" && (
+                      {location.startsWith("/patient/appointments") && (
                         <motion.span
                           layoutId="sidebar-active-indicator"
                           className="absolute left-0 top-0 h-full w-1 bg-[#1F5C3F] rounded-r"

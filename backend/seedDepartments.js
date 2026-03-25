@@ -56,19 +56,35 @@ async function seed() {
     console.log("🌱 Starting department seed process...");
     
     try {
-        // Clear existing departments just in case you run this twice
-        await prisma.department.deleteMany({});
-        console.log("🧹 Cleared old departments.");
-
-        // Insert all new departments
+        // Upsert-like behavior by name to avoid breaking DoctorProfile.departmentId references
         for (const dept of departments) {
-            const created = await prisma.department.create({
-                data: dept
+            const existing = await prisma.department.findFirst({
+                where: {
+                    name: {
+                        equals: dept.name,
+                        mode: "insensitive",
+                    },
+                },
             });
-            console.log(`✅ Added: ${created.name}`);
+
+            if (existing) {
+                const updated = await prisma.department.update({
+                    where: { id: existing.id },
+                    data: {
+                        name: dept.name,
+                        description: dept.description,
+                    },
+                });
+                console.log(`♻️ Updated: ${updated.name}`);
+            } else {
+                const created = await prisma.department.create({
+                    data: dept,
+                });
+                console.log(`✅ Added: ${created.name}`);
+            }
         }
 
-        console.log("🎉 Seeding complete! You can now test the API.");
+        console.log("🎉 Seeding complete without deleting existing department IDs.");
     } catch (error) {
         console.error("❌ Seeding failed:", error);
     } finally {

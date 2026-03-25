@@ -1,0 +1,9 @@
+ALTER TABLE "HospitalStaff"
+ADD COLUMN "age" INTEGER,
+ADD COLUMN "dateOfBirth" TIMESTAMP(3),
+ADD COLUMN "gender" TEXT;
+
+ALTER TABLE "DoctorProfile"
+ADD COLUMN "languages" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "caseSummaries" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "education" TEXT[] DEFAULT ARRAY[]::TEXT[];

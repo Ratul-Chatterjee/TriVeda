@@ -17,6 +17,53 @@ const computeAgeFromDob = (dob) => {
     return age;
 };
 
+const normalizeStringArray = (value) => {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+};
+
+const buildDoctorProfilePayload = async (staffId) => {
+    const doctor = await prisma.hospitalStaff.findUnique({
+        where: { id: staffId },
+        include: {
+            doctorProfile: {
+                include: {
+                    department: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                },
+            },
+            appointmentsAsDoc: {
+                select: {
+                    status: true,
+                },
+            },
+        },
+    });
+
+    if (!doctor || doctor.role !== 'DOCTOR') {
+        throw new ApiError(404, 'Doctor not found.');
+    }
+
+    const successCount = doctor.appointmentsAsDoc.filter(
+        (appointment) => appointment.status === 'COMPLETED'
+    ).length;
+    const unsuccessfulCount = doctor.appointmentsAsDoc.filter(
+        (appointment) => appointment.status === 'CANCELLED'
+    ).length;
+
+    return {
+        ...doctor,
+        successCount,
+        unsuccessfulCount,
+    };
+};
+
 export const getPatientProfile = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const emailQuery = req.query?.email ? String(req.query.email).trim().toLowerCase() : '';
@@ -193,36 +240,158 @@ export const getDoctorProfile = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'Doctor ID is required.');
     }
 
-    const doctor = await prisma.hospitalStaff.findUnique({
-        where: { id },
-        include: {
-            doctorProfile: true,
-            appointmentsAsDoc: {
-                orderBy: { scheduledAt: 'desc' },
-                include: {
-                    patient: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            age: true,
-                            gender: true,
-                            prakriti: true,
-                            vikriti: true,
-                        },
-                    },
-                },
-            },
-        },
-    });
-
-    if (!doctor || doctor.role !== 'DOCTOR') {
-        throw new ApiError(404, 'Doctor not found.');
-    }
+    const doctor = await buildDoctorProfilePayload(id);
 
     return res
         .status(200)
         .json(new ApiResponse(200, doctor, 'Doctor profile fetched successfully.'));
+});
+
+export const updateDoctorProfile = asyncHandler(async (req, res) => {
+    const {
+        staffId,
+        name,
+        gender,
+        dateOfBirth,
+        qualifications,
+        locality,
+        languages,
+        specialty,
+        experienceYrs,
+        certificates,
+        previousWork,
+        extraInfo,
+        caseSummaries,
+        education,
+    } = req.body;
+
+    if (!staffId) {
+        throw new ApiError(400, 'staffId is required.');
+    }
+
+    const existingDoctor = await prisma.hospitalStaff.findUnique({
+        where: { id: String(staffId) },
+        include: {
+            doctorProfile: true,
+        },
+    });
+
+    if (!existingDoctor || existingDoctor.role !== 'DOCTOR') {
+        throw new ApiError(404, 'Doctor not found.');
+    }
+
+    const trimmedName = typeof name === 'string' ? name.trim() : existingDoctor.name;
+    if (!trimmedName) {
+        throw new ApiError(400, 'Doctor name is required.');
+    }
+
+    const allowedGenders = new Set(['Male', 'Female', 'Other']);
+    const normalizedGender =
+        typeof gender === 'string' && allowedGenders.has(gender)
+            ? gender
+            : existingDoctor.gender || 'Other';
+
+    let parsedDob = existingDoctor.dateOfBirth;
+    let computedAge = existingDoctor.age;
+
+    if (dateOfBirth !== undefined && dateOfBirth !== null && String(dateOfBirth).trim() !== '') {
+        parsedDob = new Date(dateOfBirth);
+        if (Number.isNaN(parsedDob.getTime())) {
+            throw new ApiError(400, 'Invalid dateOfBirth provided.');
+        }
+
+        if (parsedDob > new Date()) {
+            throw new ApiError(400, 'dateOfBirth cannot be in the future.');
+        }
+
+        computedAge = computeAgeFromDob(parsedDob);
+    }
+
+    const normalizedLanguages = normalizeStringArray(languages);
+    const normalizedQualifications = normalizeStringArray(qualifications);
+    const normalizedCaseSummaries = normalizeStringArray(caseSummaries);
+    const normalizedEducation = normalizeStringArray(education);
+    const normalizedLocality = typeof locality === 'string' ? locality.trim() : '';
+    const normalizedCertificates = typeof certificates === 'string' ? certificates.trim() : '';
+    const normalizedPreviousWork = typeof previousWork === 'string' ? previousWork.trim() : '';
+    const normalizedExtraInfo = typeof extraInfo === 'string' ? extraInfo.trim() : '';
+
+    const normalizedSpecialty =
+        typeof specialty === 'string' && specialty.trim().length > 0
+            ? specialty.trim()
+            : existingDoctor.doctorProfile?.specialty || '';
+
+    if (!normalizedSpecialty) {
+        throw new ApiError(400, 'Specialization is required.');
+    }
+
+    if (normalizedQualifications.length === 0) {
+        throw new ApiError(400, 'At least one qualification is required.');
+    }
+
+    if (!normalizedLocality) {
+        throw new ApiError(400, 'Locality is required.');
+    }
+
+    if (!normalizedCertificates) {
+        throw new ApiError(400, 'Certificates field is required.');
+    }
+
+    if (!normalizedPreviousWork) {
+        throw new ApiError(400, 'Previous work details are required.');
+    }
+
+    const normalizedExperience = Number(experienceYrs);
+    if (!Number.isFinite(normalizedExperience) || normalizedExperience < 0) {
+        throw new ApiError(400, 'experienceYrs must be a non-negative number.');
+    }
+
+    await prisma.$transaction(async (transaction) => {
+        await transaction.hospitalStaff.update({
+            where: { id: String(staffId) },
+            data: {
+                name: trimmedName,
+                gender: normalizedGender,
+                dateOfBirth: parsedDob,
+                age: computedAge,
+            },
+        });
+
+        await transaction.doctorProfile.upsert({
+            where: { staffId: String(staffId) },
+            update: {
+                specialty: normalizedSpecialty,
+                experienceYrs: Math.round(normalizedExperience),
+                qualifications: normalizedQualifications,
+                locality: normalizedLocality,
+                certificates: normalizedCertificates,
+                previousWork: normalizedPreviousWork,
+                extraInfo: normalizedExtraInfo || null,
+                languages: normalizedLanguages,
+                caseSummaries: normalizedCaseSummaries,
+                education: normalizedEducation,
+            },
+            create: {
+                staffId: String(staffId),
+                specialty: normalizedSpecialty,
+                experienceYrs: Math.round(normalizedExperience),
+                qualifications: normalizedQualifications,
+                locality: normalizedLocality,
+                certificates: normalizedCertificates,
+                previousWork: normalizedPreviousWork,
+                extraInfo: normalizedExtraInfo || null,
+                languages: normalizedLanguages,
+                caseSummaries: normalizedCaseSummaries,
+                education: normalizedEducation,
+            },
+        });
+    });
+
+    const updatedDoctor = await buildDoctorProfilePayload(String(staffId));
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, updatedDoctor, 'Doctor profile updated successfully.'));
 });
 
 export const updatePatientProfile = asyncHandler(async (req, res) => {
@@ -241,6 +410,11 @@ export const updatePatientProfile = asyncHandler(async (req, res) => {
         chronicConditions,
         weight,
         height,
+        prakriti,
+        vikriti,
+        vataScore,
+        pittaScore,
+        kaphaScore,
     } = req.body;
 
     if (!id) {
@@ -315,6 +489,26 @@ export const updatePatientProfile = asyncHandler(async (req, res) => {
                 ? bloodGroup.trim().toUpperCase()
                 : existingPatient.bloodGroup,
         dietaryPref: typeof dietaryPref === 'string' ? dietaryPref : existingPatient.dietaryPref,
+        prakriti:
+            typeof prakriti === 'string' && prakriti.trim().length > 0
+                ? prakriti.trim()
+                : existingPatient.prakriti,
+        vikriti:
+            typeof vikriti === 'string'
+                ? vikriti.trim()
+                : existingPatient.vikriti,
+        vataScore:
+            vataScore !== undefined && vataScore !== null && vataScore !== ''
+                ? Number(vataScore)
+                : existingPatient.vataScore,
+        pittaScore:
+            pittaScore !== undefined && pittaScore !== null && pittaScore !== ''
+                ? Number(pittaScore)
+                : existingPatient.pittaScore,
+        kaphaScore:
+            kaphaScore !== undefined && kaphaScore !== null && kaphaScore !== ''
+                ? Number(kaphaScore)
+                : existingPatient.kaphaScore,
         allergies: Array.isArray(allergies)
             ? allergies.map((item) => String(item).trim()).filter(Boolean)
             : existingPatient.allergies,

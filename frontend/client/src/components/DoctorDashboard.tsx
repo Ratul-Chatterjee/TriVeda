@@ -41,6 +41,13 @@ import {
   Award,
   Shield,
   Thermometer,
+  Save,
+  Wind,
+  Flame,
+  Droplet,
+  Utensils,
+  BookOpen,
+  ChevronRight,
 } from "lucide-react";
 import {
   BarChart as RechartsBarChart,
@@ -59,102 +66,19 @@ import {
   Area,
 } from "recharts";
 import GuidelineModal from "./GuidelineModal";
-import { useDoctorProfile } from "@/hooks/useProfile";
+import { useDoctorProfile, useUpdatePatientProfile } from "@/hooks/useProfile";
 import { useDoctorPatients } from "@/hooks/useDoctorPatients";
+import { useDoctorAppointments } from "@/hooks/useAppointments";
+import { useSaveDoctorPlan } from "@/hooks/useAppointments";
+import { useLatestPrakritiAssessment, useSavePrakritiAssessment } from "@/hooks/useAppointments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AppointmentBooking,
   categoryLabelMap,
   downloadAppointmentPdf,
   getStoredAppointments,
 } from "@/lib/appointment-booking";
-
-const mockPatients = [
-  {
-    id: "1",
-    name: "Priya Sharma",
-    age: 34,
-    gender: "Female",
-    prakriti: "Pitta",
-    lastVisit: "2024-01-15",
-    nextAppointment: "2024-01-22",
-    compliance: 85,
-    status: "active",
-    priority: "medium",
-    avatar: null,
-    phone: "+91 98765 43210",
-    email: "priya.sharma@email.com",
-    location: "Mumbai, Maharashtra",
-    issues: ["Weight Management", "Digestion", "Hypertension"],
-    vitalSigns: { bp: "120/80", pulse: 72, weight: "65kg", temp: "98.6°F" },
-    medications: ["Triphala", "Ashwagandha", "Custom Herbal Mix"],
-    riskScore: 3,
-    starred: true,
-  },
-  {
-    id: "2",
-    name: "Rohit Kumar",
-    age: 42,
-    gender: "Male",
-    prakriti: "Vata-Kapha",
-    lastVisit: "2024-01-10",
-    nextAppointment: "2024-01-25",
-    compliance: 92,
-    status: "active",
-    priority: "low",
-    avatar: null,
-    phone: "+91 87654 32109",
-    email: "rohit.kumar@email.com",
-    location: "Delhi, Delhi",
-    issues: ["Stress Management", "Sleep Quality", "Joint Pain"],
-    vitalSigns: { bp: "118/76", pulse: 68, weight: "78kg", temp: "98.2°F" },
-    medications: ["Brahmi", "Jatamansi", "Guggulu"],
-    riskScore: 2,
-    starred: false,
-  },
-  {
-    id: "3",
-    name: "Anjali Reddy",
-    age: 28,
-    gender: "Female",
-    prakriti: "Kapha",
-    lastVisit: "2024-01-08",
-    nextAppointment: "2024-01-20",
-    compliance: 67,
-    status: "needs-attention",
-    priority: "high",
-    avatar: null,
-    phone: "+91 76543 21098",
-    email: "anjali.reddy@email.com",
-    location: "Hyderabad, Telangana",
-    issues: ["PCOD", "Weight Loss", "Irregular Periods"],
-    vitalSigns: { bp: "125/82", pulse: 78, weight: "72kg", temp: "98.4°F" },
-    medications: ["Shatavari", "Lodhra", "Kanchanar Guggulu"],
-    riskScore: 4,
-    starred: true,
-  },
-  {
-    id: "4",
-    name: "Dr. Vikram Patel",
-    age: 38,
-    gender: "Male",
-    prakriti: "Pitta-Vata",
-    lastVisit: "2024-01-12",
-    nextAppointment: "2024-01-28",
-    compliance: 78,
-    status: "active",
-    priority: "medium",
-    avatar: null,
-    phone: "+91 65432 10987",
-    email: "vikram.patel@email.com",
-    location: "Pune, Maharashtra",
-    issues: ["Hypertension", "Stress", "Insomnia"],
-    vitalSigns: { bp: "135/88", pulse: 82, weight: "85kg", temp: "98.8°F" },
-    medications: ["Arjuna", "Brahmi", "Saraswatarishta"],
-    riskScore: 3,
-    starred: false,
-  },
-];
 
 const mockRecentActivities = [
   {
@@ -209,6 +133,146 @@ const prakritiDistribution = [
   { name: "Kapha", value: 25, color: "#ffd166" },
 ];
 
+const prakritiQuestions = [
+  { id: "body-frame", label: "Body Frame" },
+  { id: "skin-type", label: "Skin Type" },
+  { id: "appetite", label: "Appetite" },
+  { id: "sleep", label: "Sleep Pattern" },
+  { id: "energy", label: "Energy Levels" },
+  { id: "digestion", label: "Digestion" },
+  { id: "temperament", label: "Temperament" },
+  { id: "weather", label: "Weather Preference" },
+];
+
+const doshaReviewConfig = {
+  vata: {
+    name: "Vata",
+    icon: Wind,
+    color: "text-[#1F5C3F]",
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200",
+  },
+  pitta: {
+    name: "Pitta",
+    icon: Flame,
+    color: "text-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-200",
+  },
+  kapha: {
+    name: "Kapha",
+    icon: Droplet,
+    color: "text-emerald-600",
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200",
+  },
+} as const;
+
+const mockFoodDatabase = [
+  { id: "1", name: "Poha", category: "Breakfast", rasa: "Sweet", dosha: "Balances Pitta", calories: 180 },
+  { id: "2", name: "Brown Rice", category: "Grains", rasa: "Sweet", dosha: "Balances all Doshas", calories: 220 },
+  { id: "3", name: "Moong Dal", category: "Legumes", rasa: "Sweet", dosha: "Balances Pitta", calories: 150 },
+  { id: "4", name: "Cucumber", category: "Vegetables", rasa: "Sweet", dosha: "Balances Pitta", calories: 15 },
+  { id: "5", name: "Coconut Water", category: "Beverages", rasa: "Sweet", dosha: "Balances Pitta", calories: 45 },
+  { id: "6", name: "Khichdi", category: "Complete Meals", rasa: "Sweet", dosha: "Balances all Doshas", calories: 200 },
+  { id: "7", name: "Ghee", category: "Fats", rasa: "Sweet", dosha: "Balances Vata", calories: 120 },
+  { id: "8", name: "Buttermilk", category: "Beverages", rasa: "Sour", dosha: "Balances Pitta", calories: 60 },
+];
+
+const remedyCatalog = [
+  {
+    id: "r1",
+    medicineName: "Triphala Churna",
+    herbsUsed: ["Amalaki", "Bibhitaki", "Haritaki"],
+    ayurvedicProperties: ["Mild Detox", "Digestive Support", "Tridosha Balancing"],
+    medicineType: "Powder",
+  },
+  {
+    id: "r2",
+    medicineName: "Brahmi Ghrita",
+    herbsUsed: ["Brahmi", "Cow Ghee"],
+    ayurvedicProperties: ["Cooling", "Nervine Tonic", "Supports Sleep"],
+    medicineType: "Medicated Ghee",
+  },
+  {
+    id: "r3",
+    medicineName: "Ashwagandha Lehyam",
+    herbsUsed: ["Ashwagandha", "Ghee", "Jaggery"],
+    ayurvedicProperties: ["Strengthening", "Warming", "Vata Support"],
+    medicineType: "Paste",
+  },
+  {
+    id: "r4",
+    medicineName: "Avipattikar Churna",
+    herbsUsed: ["Trikatu", "Musta", "Vidanga"],
+    ayurvedicProperties: ["Pitta Pacifying", "Acidity Support", "Cooling Digestive"],
+    medicineType: "Powder",
+  },
+  {
+    id: "r5",
+    medicineName: "Dashamoola Kwath",
+    herbsUsed: ["Bilva", "Agnimantha", "Shyonaka"],
+    ayurvedicProperties: ["Anti-inflammatory", "Vata-Kapha Support", "Deepana"],
+    medicineType: "Liquid Decoction",
+  },
+];
+
+type MedicationSlot = {
+  id: string;
+  remedyId: string | null;
+  timing: string;
+  dosage: string;
+  doctorNotes: string;
+  importantDetails: string;
+};
+
+type ExerciseSlot = {
+  id: string;
+  exerciseId: string | null;
+  timing: string;
+  duration: string;
+  doctorNotes: string;
+  importantDetails: string;
+};
+
+const exerciseCatalog = [
+  {
+    id: "e1",
+    name: "Nadi Shodhana Pranayama",
+    category: "Pranayama",
+    ayurvedicProperties: ["Calming", "Balances Vata", "Mind Clarity"],
+    effectProfile: ["Improves sleep quality", "Reduces stress load"],
+  },
+  {
+    id: "e2",
+    name: "Surya Namaskar",
+    category: "Yoga Sequence",
+    ayurvedicProperties: ["Warming", "Stimulates Agni", "Kapha Reduction"],
+    effectProfile: ["Improves metabolism", "Can increase heat if overdone"],
+  },
+  {
+    id: "e3",
+    name: "Vajrasana",
+    category: "Asana",
+    ayurvedicProperties: ["Post-meal digestion support", "Grounding"],
+    effectProfile: ["Supports digestion", "Low impact posture"],
+  },
+  {
+    id: "e4",
+    name: "Shavasana",
+    category: "Restorative",
+    ayurvedicProperties: ["Deep relaxation", "Pitta calming"],
+    effectProfile: ["Helps light sleepers", "Reduces over-exertion"],
+  },
+  {
+    id: "e5",
+    name: "Brisk Walking",
+    category: "Exercise",
+    ayurvedicProperties: ["Kapha mobilizing", "Cardio support"],
+    effectProfile: ["Weight support", "Avoid too late at night"],
+  },
+];
+
 interface DoctorDashboardProps {
   onNavigate?: (view: string) => void;
   patientId?: string;
@@ -225,10 +289,19 @@ export default function DoctorDashboard({
       : "";
   const { data: doctorProfileData, isLoading: isDoctorProfileLoading } = useDoctorProfile(doctorId);
   const { data: doctorPatientsData, isLoading: isDoctorPatientsLoading } = useDoctorPatients(doctorId);
+  const {
+    data: doctorAppointmentsData,
+    isLoading: isDoctorAppointmentsLoading,
+    refetch: refetchDoctorAppointments,
+  } = useDoctorAppointments(doctorId);
   const doctorPayload: any = (doctorProfileData as any)?.data || doctorProfileData || {};
   const patientsPayload: any = (doctorPatientsData as any)?.data || doctorPatientsData || [];
+  const appointmentsPayload: any[] = (doctorAppointmentsData as any)?.data || doctorAppointmentsData || [];
   const doctorDisplayName = doctorPayload?.name || loggedInUser?.name || "Doctor";
   const doctorSpecialty = doctorPayload?.doctorProfile?.specialty || "Ayurvedic Doctor";
+  const saveDoctorPlanMutation = useSaveDoctorPlan();
+  const savePrakritiAssessmentMutation = useSavePrakritiAssessment();
+  const updatePatientProfileMutation = useUpdatePatientProfile();
 
   const [sharedAppointments, setSharedAppointments] = useState<AppointmentBooking[]>([]);
   // Reschedule Modal State
@@ -325,6 +398,52 @@ export default function DoctorDashboard({
   const [doctorNotes, setDoctorNotes] = useState("");
   const [doctorAnalysis, setDoctorAnalysis] = useState("");
   const [planConfirmed, setPlanConfirmed] = useState(false);
+  const [profileMode, setProfileMode] = useState<"view" | "consult">("view");
+  const [prakritiEditMode, setPrakritiEditMode] = useState(false);
+  const [prakritiEditState, setPrakritiEditState] = useState<{
+    finalDosha: "vata" | "pitta" | "kapha" | "";
+    doctorNotes: string;
+    answers: string[];
+  }>({
+    finalDosha: "",
+    doctorNotes: "",
+    answers: Array(8).fill("Not specified"),
+  });
+
+  const {
+    data: latestPrakritiAssessmentData,
+    isLoading: isLatestPrakritiLoading,
+    refetch: refetchLatestPrakriti,
+  } = useLatestPrakritiAssessment(selectedPatient?.id);
+
+  const [showDietFlowModal, setShowDietFlowModal] = useState(false);
+  const [dietFlowStep, setDietFlowStep] = useState(1);
+  const [dietFlowSearch, setDietFlowSearch] = useState("");
+  const [dietFlowSelectedMealIdx, setDietFlowSelectedMealIdx] = useState(0);
+  const [dietFlowChart, setDietFlowChart] = useState<any>({
+    patientName: "",
+    prakriti: "",
+    meals: [
+      { meal: "Breakfast", foods: [], time: "8:00 AM", rationale: "", calories: 0 },
+      { meal: "Lunch", foods: [], time: "1:00 PM", rationale: "", calories: 0 },
+      { meal: "Snack", foods: [], time: "4:30 PM", rationale: "", calories: 0 },
+      { meal: "Dinner", foods: [], time: "7:00 PM", rationale: "", calories: 0 },
+    ],
+    recommendations: [],
+  });
+
+  const [showFieldFlowModal, setShowFieldFlowModal] = useState(false);
+  const [fieldFlowType, setFieldFlowType] = useState<"medications" | "asanas" | "therapy" | "tests" | "notes" | null>(null);
+  const [fieldFlowDraft, setFieldFlowDraft] = useState("");
+  const [fieldFlowStep, setFieldFlowStep] = useState(1);
+  const [medicationSlots, setMedicationSlots] = useState<MedicationSlot[]>([]);
+  const [medicationSlotsDraft, setMedicationSlotsDraft] = useState<MedicationSlot[]>([]);
+  const [activeMedicationSlotId, setActiveMedicationSlotId] = useState<string | null>(null);
+  const [exerciseSlots, setExerciseSlots] = useState<ExerciseSlot[]>([]);
+  const [exerciseSlotsDraft, setExerciseSlotsDraft] = useState<ExerciseSlot[]>([]);
+  const [activeExerciseSlotId, setActiveExerciseSlotId] = useState<string | null>(null);
+  const [therapyFlowText, setTherapyFlowText] = useState("");
+  const [testsFlowText, setTestsFlowText] = useState("");
 
   // Seasonal Guidelines Modal State
   const [showGuidelineModal, setShowGuidelineModal] = useState(false);
@@ -346,28 +465,95 @@ export default function DoctorDashboard({
   useEffect(() => {
     if (!patientId) {
       setSelectedPatient(null);
+      setProfileMode("view");
+      setPrakritiEditMode(false);
       return;
     }
+
+    const storedMode = window.sessionStorage.getItem(`doctor:patient-mode:${patientId}`);
+    setProfileMode(storedMode === "consult" ? "consult" : "view");
+    const storedAppointmentId = window.sessionStorage.getItem(`doctor:patient-appointment:${patientId}`);
+    if (storedAppointmentId) {
+      setSelectedAppointmentId(storedAppointmentId);
+    }
+
     const patientFromRoute = patients.find((patient) => patient.id === patientId) || null;
     setSelectedPatient(patientFromRoute);
   }, [patientId, patients]);
 
   useEffect(() => {
-    if (Array.isArray(patientsPayload) && patientsPayload.length > 0) {
-      setPatients(patientsPayload);
-    }
+    if (!Array.isArray(patientsPayload)) return;
+
+    const normalizedPatients = patientsPayload.map((patient: any) => ({
+      ...patient,
+      prakriti: patient?.prakriti || "Not Assessed",
+      location: patient?.location || "-",
+      issues: Array.isArray(patient?.issues) ? patient.issues : [],
+      medications: Array.isArray(patient?.medications) ? patient.medications : [],
+      vitalSigns: patient?.vitalSigns || { bp: "-", pulse: 0, weight: "-", temp: "-" },
+      phone: patient?.phone || "-",
+      email: patient?.email || "-",
+      age: Number(patient?.age ?? 0),
+      compliance: Number(patient?.compliance ?? 0),
+      riskScore: Number(patient?.riskScore ?? 0),
+      priority: patient?.priority || "low",
+      status: patient?.status || "active",
+      starred: Boolean(patient?.starred),
+    }));
+
+    setPatients(normalizedPatients);
   }, [patientsPayload]);
 
   useEffect(() => {
-    setSharedAppointments(getStoredAppointments());
+    if (!Array.isArray(appointmentsPayload)) {
+      setSharedAppointments([]);
+      return;
+    }
 
-    const syncSharedAppointments = () => setSharedAppointments(getStoredAppointments());
-    window.addEventListener("storage", syncSharedAppointments);
+    const mapped: AppointmentBooking[] = appointmentsPayload.map((appointment: any) => {
+      const scheduledAt = appointment?.scheduledAt ? new Date(appointment.scheduledAt) : new Date();
+      const safeDate = Number.isNaN(scheduledAt.getTime()) ? new Date() : scheduledAt;
 
-    return () => {
-      window.removeEventListener("storage", syncSharedAppointments);
-    };
-  }, []);
+      const selectedDate = safeDate.toISOString().split("T")[0];
+      const selectedTime = safeDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+
+      const severityRaw = String(appointment?.severity || "").toLowerCase();
+      const severity: "mild" | "moderate" | "severe" =
+        severityRaw === "severe" ? "severe" : severityRaw === "moderate" ? "moderate" : "mild";
+
+      return {
+        id: appointment?.id,
+        patientId: appointment?.patient?.id,
+        bookingId: `APT-${String(appointment?.id || "").slice(0, 6).toUpperCase()}`,
+        createdAt: appointment?.createdAt || safeDate.toISOString(),
+        diagnosis: appointment?.problemDescription || appointment?.aiSummary || "Consultation",
+        symptoms: appointment?.patientSymptoms || "-",
+        duration: appointment?.duration || "-",
+        severity,
+        doctorCategory: "general",
+        selectedDate,
+        selectedTime,
+        consultationMode: "clinic",
+        patientName: appointment?.patient?.name || "Patient",
+        patientAge: String(appointment?.patient?.age ?? "-"),
+        patientGender: appointment?.patient?.gender || "-",
+        currentMedications: "-",
+        allergies: "-",
+        medicalHistory: appointment?.patient?.vikriti || "-",
+        additionalNotes: appointment?.doctorNotes || "",
+        assignedDoctor: {
+          id: doctorId,
+          name: doctorDisplayName,
+          department: doctorSpecialty,
+          experience: Number(doctorPayload?.doctorProfile?.experienceYrs ?? 0),
+          clinic: "TriVeda",
+        },
+        status: "confirmed",
+      };
+    });
+
+    setSharedAppointments(mapped);
+  }, [appointmentsPayload, doctorDisplayName, doctorId, doctorPayload?.doctorProfile?.experienceYrs, doctorSpecialty]);
 
   const getAppointmentDateTime = (appointment: AppointmentBooking) => {
     const [hourRaw, minuteRaw] = appointment.selectedTime.split(":");
@@ -398,6 +584,102 @@ export default function DoctorDashboard({
   const selectedAppointment = sharedAppointments.find(
     (appointment) => appointment.id === selectedAppointmentId
   ) || null;
+
+  const openPatientProfile = (patientIdToOpen: string, mode: "view" | "consult", appointmentId?: string) => {
+    if (!patientIdToOpen) return;
+    window.sessionStorage.setItem(`doctor:patient-mode:${patientIdToOpen}`, mode);
+    if (appointmentId) {
+      window.sessionStorage.setItem(`doctor:patient-appointment:${patientIdToOpen}`, appointmentId);
+    } else {
+      window.sessionStorage.removeItem(`doctor:patient-appointment:${patientIdToOpen}`);
+    }
+    window.location.href = `/doctor/${patientIdToOpen}`;
+  };
+
+  const handleSaveTreatmentPlan = async () => {
+    if (!selectedAppointmentId) {
+      alert("No appointment selected for plan update.");
+      return;
+    }
+
+    const dietLines = dietChartItems
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const routineLines = routinePlan
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const dosLines = dietStats
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const dontsLines = doctorAnalysis
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const medicationsFromSlots = medicationSlots
+      .map((slot) => {
+        const selectedRemedy = remedyCatalog.find((remedy) => remedy.id === slot.remedyId);
+        if (!selectedRemedy) return null;
+
+        return {
+          name: selectedRemedy.medicineName,
+          timing: slot.timing,
+          dosage: slot.dosage,
+          doctorNotes: slot.doctorNotes,
+          importantDetails: slot.importantDetails,
+          herbsUsed: selectedRemedy.herbsUsed,
+          properties: selectedRemedy.ayurvedicProperties.join(", "),
+          type: selectedRemedy.medicineType,
+        };
+      })
+      .filter(Boolean) as any[];
+
+    const medications = medicationsFromSlots.length > 0
+      ? medicationsFromSlots
+      : [
+          {
+            name: medicationName,
+            timing: medicationTime,
+            properties: medicationProperties,
+          },
+        ].filter((item) => item.name || item.timing || item.properties);
+
+    try {
+      await saveDoctorPlanMutation.mutateAsync({
+        appointmentId: selectedAppointmentId,
+        planData: {
+          doctorNotes,
+          dietChart: {
+            items: dietLines,
+            pathya: dosLines,
+            apathya: dontsLines,
+          },
+          routinePlan: {
+            exercisesAndAsanas: routineLines,
+            mode: routineMode,
+            therapy: therapyFlowText
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+            tests: testsFlowText
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+          },
+          medications,
+        },
+      });
+      setPlanConfirmed(true);
+    } catch (_error) {
+      setPlanConfirmed(false);
+    }
+  };
 
   const filteredPatients = patients
     .filter((patient) => {
@@ -454,12 +736,465 @@ export default function DoctorDashboard({
   };
 
   const handleCreateDietChart = (patientId: string) => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      console.log("Creating diet chart for patient:", patientId);
-      if (onNavigate) onNavigate("diet-chart-creation");
-    }, 1000);
+    const patient = patients.find((entry) => entry.id === patientId) || selectedPatient;
+    setDietFlowChart({
+      patientName: patient?.name || "Patient",
+      prakriti: patient?.prakriti || "Vata",
+      meals: [
+        { meal: "Breakfast", foods: [], time: "8:00 AM", rationale: "", calories: 0 },
+        { meal: "Lunch", foods: [], time: "1:00 PM", rationale: "", calories: 0 },
+        { meal: "Snack", foods: [], time: "4:30 PM", rationale: "", calories: 0 },
+        { meal: "Dinner", foods: [], time: "7:00 PM", rationale: "", calories: 0 },
+      ],
+      recommendations: [],
+    });
+    setDietFlowStep(1);
+    setDietFlowSearch("");
+    setDietFlowSelectedMealIdx(0);
+    setShowDietFlowModal(true);
+  };
+
+  const handleDietFlowAddFood = (food: any) => {
+    setDietFlowChart((prev: any) => {
+      const nextMeals = [...prev.meals];
+      nextMeals[dietFlowSelectedMealIdx].foods = [...nextMeals[dietFlowSelectedMealIdx].foods, food.name];
+      nextMeals[dietFlowSelectedMealIdx].calories += Number(food.calories || 0);
+      return { ...prev, meals: nextMeals };
+    });
+  };
+
+  const handleDietFlowRemoveFood = (foodIndex: number) => {
+    setDietFlowChart((prev: any) => {
+      const nextMeals = [...prev.meals];
+      const foodName = nextMeals[dietFlowSelectedMealIdx].foods[foodIndex];
+      const food = mockFoodDatabase.find((item) => item.name === foodName);
+      if (food) nextMeals[dietFlowSelectedMealIdx].calories -= Number(food.calories || 0);
+      nextMeals[dietFlowSelectedMealIdx].foods = nextMeals[dietFlowSelectedMealIdx].foods.filter(
+        (_item: string, index: number) => index !== foodIndex
+      );
+      return { ...prev, meals: nextMeals };
+    });
+  };
+
+  const handleDietFlowRationale = (value: string) => {
+    setDietFlowChart((prev: any) => {
+      const nextMeals = [...prev.meals];
+      nextMeals[dietFlowSelectedMealIdx].rationale = value;
+      return { ...prev, meals: nextMeals };
+    });
+  };
+
+  const handleDietFlowRecommendations = (value: string) => {
+    setDietFlowChart((prev: any) => ({
+      ...prev,
+      recommendations: value
+        .split("\n")
+        .map((line: string) => line.trim())
+        .filter(Boolean),
+    }));
+  };
+
+  const handleDietFlowPublish = () => {
+    const compiledMealLines = dietFlowChart.meals
+      .map((meal: any) => `${meal.meal}: ${meal.foods.join(", ") || "No foods selected"}`)
+      .join("\n");
+    const compiledTimings = dietFlowChart.meals
+      .map((meal: any) => `${meal.meal}: ${meal.time}`)
+      .join("\n");
+
+    setDietChartItems(compiledMealLines);
+    setMealTimings(compiledTimings);
+    setShowDietFlowModal(false);
+  };
+
+  const openFieldFlowModal = (type: "medications" | "asanas" | "therapy" | "tests" | "notes") => {
+    setFieldFlowType(type);
+    setFieldFlowStep(1);
+    if (type === "medications") {
+      setFieldFlowDraft([medicationName, medicationTime, medicationProperties].filter(Boolean).join("\n"));
+      const initialSlots = medicationSlots.length > 0
+        ? medicationSlots
+        : [{
+            id: `slot-${Date.now()}`,
+            remedyId: null,
+            timing: "",
+            dosage: "",
+            doctorNotes: "",
+            importantDetails: "",
+          }];
+      setMedicationSlotsDraft(initialSlots);
+      setActiveMedicationSlotId(initialSlots[0]?.id || null);
+    } else if (type === "asanas") {
+      setFieldFlowDraft(routinePlan);
+      const initialSlots = exerciseSlots.length > 0
+        ? exerciseSlots
+        : [{
+            id: `slot-${Date.now()}`,
+            exerciseId: null,
+            timing: "",
+            duration: "",
+            doctorNotes: "",
+            importantDetails: "",
+          }];
+      setExerciseSlotsDraft(initialSlots);
+      setActiveExerciseSlotId(initialSlots[0]?.id || null);
+    } else if (type === "therapy") {
+      setFieldFlowDraft(therapyFlowText);
+    } else if (type === "tests") {
+      setFieldFlowDraft(testsFlowText);
+    } else {
+      setFieldFlowDraft(doctorNotes);
+    }
+    setShowFieldFlowModal(true);
+  };
+
+  const saveFieldFlowModal = () => {
+    if (!fieldFlowType) return;
+
+    if (fieldFlowType === "medications") {
+      const normalizedSlots = [...medicationSlotsDraft]
+        .filter((slot) => slot.remedyId && slot.timing)
+        .sort((slotA, slotB) => slotA.timing.localeCompare(slotB.timing));
+
+      setMedicationSlots(normalizedSlots);
+
+      const firstSlot = normalizedSlots[0];
+      const firstRemedy = remedyCatalog.find((remedy) => remedy.id === firstSlot?.remedyId);
+      if (firstSlot && firstRemedy) {
+        setMedicationName(firstRemedy.medicineName);
+        setMedicationTime(firstSlot.timing);
+        setMedicationProperties(
+          `${firstSlot.dosage || ""}${firstSlot.doctorNotes ? `; ${firstSlot.doctorNotes}` : ""}`.trim()
+        );
+      }
+    } else if (fieldFlowType === "asanas") {
+      const normalizedSlots = [...exerciseSlotsDraft]
+        .filter((slot) => slot.exerciseId && slot.timing)
+        .sort((slotA, slotB) => slotA.timing.localeCompare(slotB.timing));
+
+      setExerciseSlots(normalizedSlots);
+      setRoutinePlan(
+        normalizedSlots
+          .map((slot) => {
+            const selectedExercise = exerciseCatalog.find((exercise) => exercise.id === slot.exerciseId);
+            return selectedExercise
+              ? `${slot.timing} - ${selectedExercise.name} (${slot.duration || "duration not set"})`
+              : null;
+          })
+          .filter(Boolean)
+          .join("\n")
+      );
+    } else if (fieldFlowType === "therapy") {
+      setTherapyFlowText(fieldFlowDraft);
+    } else if (fieldFlowType === "tests") {
+      setTestsFlowText(fieldFlowDraft);
+    } else {
+      setDoctorNotes(fieldFlowDraft);
+    }
+
+    setShowFieldFlowModal(false);
+    setFieldFlowType(null);
+    setFieldFlowDraft("");
+    setFieldFlowStep(1);
+    setActiveMedicationSlotId(null);
+    setActiveExerciseSlotId(null);
+  };
+
+  const fieldFlowLabel =
+    fieldFlowType === "medications"
+      ? "Current Medications / Remedies"
+      : fieldFlowType === "asanas"
+      ? "Asanas / Exercises"
+      : fieldFlowType === "therapy"
+      ? "Therapy"
+      : fieldFlowType === "tests"
+      ? "Tests"
+      : "Doctor Notes";
+
+  const parsedFieldFlowItems = fieldFlowDraft
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const updateMedicationSlot = (slotId: string, key: keyof MedicationSlot, value: string | null) => {
+    setMedicationSlotsDraft((previousSlots) =>
+      previousSlots.map((slot) =>
+        slot.id === slotId
+          ? {
+              ...slot,
+              [key]: value,
+            }
+          : slot
+      )
+    );
+  };
+
+  const createMedicationSlot = () => {
+    const newSlot: MedicationSlot = {
+      id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      remedyId: null,
+      timing: "",
+      dosage: "",
+      doctorNotes: "",
+      importantDetails: "",
+    };
+    setMedicationSlotsDraft((previousSlots) => [...previousSlots, newSlot]);
+    setActiveMedicationSlotId(newSlot.id);
+  };
+
+  const removeMedicationSlot = (slotId: string) => {
+    setMedicationSlotsDraft((previousSlots) => previousSlots.filter((slot) => slot.id !== slotId));
+    setActiveMedicationSlotId((previousSlotId) => (previousSlotId === slotId ? null : previousSlotId));
+  };
+
+  const medicationAiAnalysis = (() => {
+    const findings: Array<{ level: "good" | "warning"; text: string }> = [];
+    const selectedSlots = medicationSlotsDraft.filter((slot) => slot.remedyId && slot.timing);
+
+    if (selectedSlots.length === 0) {
+      findings.push({ level: "warning", text: "No fully configured medication slots yet." });
+      return findings;
+    }
+
+    const selectedRemedies = selectedSlots
+      .map((slot) => remedyCatalog.find((remedy) => remedy.id === slot.remedyId))
+      .filter(Boolean) as typeof remedyCatalog;
+
+    findings.push({ level: "good", text: `${selectedSlots.length} medication slot(s) configured and ready for timeline sorting.` });
+
+    const allergies = Array.isArray(selectedPatient?.allergies)
+      ? selectedPatient.allergies.map((item: string) => item.toLowerCase())
+      : [];
+
+    selectedRemedies.forEach((remedy) => {
+      const conflictHerb = remedy.herbsUsed.find((herb) =>
+        allergies.some((allergy: string) => herb.toLowerCase().includes(allergy))
+      );
+      if (conflictHerb) {
+        findings.push({
+          level: "warning",
+          text: `${remedy.medicineName} may conflict with reported allergy pattern (${conflictHerb}).`,
+        });
+      }
+    });
+
+    const hasWarming = selectedRemedies.some((remedy) =>
+      remedy.ayurvedicProperties.some((property) => property.toLowerCase().includes("warming"))
+    );
+    const prakritiText = String(selectedPatient?.prakriti || "").toLowerCase();
+    if (prakritiText.includes("pitta") && hasWarming) {
+      findings.push({
+        level: "warning",
+        text: "Pitta patient with warming remedies detected; review dosage/timing carefully.",
+      });
+    }
+
+    const sameTimeCount: Record<string, number> = {};
+    selectedSlots.forEach((slot) => {
+      sameTimeCount[slot.timing] = (sameTimeCount[slot.timing] || 0) + 1;
+    });
+    Object.entries(sameTimeCount).forEach(([time, count]) => {
+      if (count > 2) {
+        findings.push({
+          level: "warning",
+          text: `${count} remedies scheduled at ${time}; consider staggering to reduce pill burden.`,
+        });
+      }
+    });
+
+    const sleepSensitive =
+      String(selectedPatient?.issues || "").toLowerCase().includes("sleep") ||
+      String(selectedPatient?.vikriti || "").toLowerCase().includes("sleep");
+    if (sleepSensitive) {
+      findings.push({
+        level: "good",
+        text: "Sleep-related condition detected; prefer calming/night-safe timings where possible.",
+      });
+    }
+
+    return findings;
+  })();
+
+  const updateExerciseSlot = (slotId: string, key: keyof ExerciseSlot, value: string | null) => {
+    setExerciseSlotsDraft((previousSlots) =>
+      previousSlots.map((slot) => (slot.id === slotId ? { ...slot, [key]: value } : slot))
+    );
+  };
+
+  const createExerciseSlot = () => {
+    const newSlot: ExerciseSlot = {
+      id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      exerciseId: null,
+      timing: "",
+      duration: "",
+      doctorNotes: "",
+      importantDetails: "",
+    };
+    setExerciseSlotsDraft((previousSlots) => [...previousSlots, newSlot]);
+    setActiveExerciseSlotId(newSlot.id);
+  };
+
+  const removeExerciseSlot = (slotId: string) => {
+    setExerciseSlotsDraft((previousSlots) => previousSlots.filter((slot) => slot.id !== slotId));
+    setActiveExerciseSlotId((previousSlotId) => (previousSlotId === slotId ? null : previousSlotId));
+  };
+
+  const exerciseAiAnalysis = (() => {
+    const findings: Array<{ level: "good" | "warning"; text: string }> = [];
+    const selectedSlots = exerciseSlotsDraft.filter((slot) => slot.exerciseId && slot.timing);
+
+    if (selectedSlots.length === 0) {
+      findings.push({ level: "warning", text: "No fully configured exercise slots yet." });
+      return findings;
+    }
+
+    const selectedExercises = selectedSlots
+      .map((slot) => exerciseCatalog.find((exercise) => exercise.id === slot.exerciseId))
+      .filter(Boolean) as typeof exerciseCatalog;
+
+    findings.push({ level: "good", text: `${selectedSlots.length} exercise slot(s) configured with timing.` });
+
+    const isLightSleeper =
+      String(selectedPatient?.issues || "").toLowerCase().includes("sleep") ||
+      String(selectedPatient?.vikriti || "").toLowerCase().includes("sleep");
+
+    const hasLateStimulating = selectedSlots.some((slot) => {
+      const exercise = selectedExercises.find((item) => item.id === slot.exerciseId);
+      const hour = Number(slot.timing.split(":")[0] || "0");
+      const stimulating = exercise?.effectProfile.some((effect) => effect.toLowerCase().includes("metabolism"));
+      return hour >= 20 && stimulating;
+    });
+
+    if (isLightSleeper && hasLateStimulating) {
+      findings.push({ level: "warning", text: "Late stimulating exercise may affect this patient's sleep quality." });
+    }
+
+    const hasHeatGenerating = selectedExercises.some((exercise) =>
+      exercise.ayurvedicProperties.some((property) => property.toLowerCase().includes("warming") || property.toLowerCase().includes("agni"))
+    );
+    if (String(selectedPatient?.prakriti || "").toLowerCase().includes("pitta") && hasHeatGenerating) {
+      findings.push({ level: "warning", text: "Heat-generating practices selected for Pitta patient; monitor intensity/time." });
+    }
+
+    if (selectedExercises.some((exercise) => exercise.name.toLowerCase().includes("shavasana"))) {
+      findings.push({ level: "good", text: "Restorative asana included; supports recovery and stress regulation." });
+    }
+
+    return findings;
+  })();
+
+  const latestAssessmentPayload: any =
+    (latestPrakritiAssessmentData as any)?.data || latestPrakritiAssessmentData || null;
+
+  const resolvedAssessmentAnswers = Array.isArray(latestAssessmentPayload?.answers)
+    ? latestAssessmentPayload.answers
+    : Array(8).fill("Not specified");
+
+  const resolvedPrakritiScores = {
+    vata: Number(latestAssessmentPayload?.vataScore ?? selectedPatient?.vataScore ?? 0),
+    pitta: Number(latestAssessmentPayload?.pittaScore ?? selectedPatient?.pittaScore ?? 0),
+    kapha: Number(latestAssessmentPayload?.kaphaScore ?? selectedPatient?.kaphaScore ?? 0),
+  };
+
+  const resolvedPrimaryDosha =
+    String(latestAssessmentPayload?.primaryDosha || selectedPatient?.prakriti || "")
+      .toLowerCase()
+      .includes("pitta")
+      ? "pitta"
+      : String(latestAssessmentPayload?.primaryDosha || selectedPatient?.prakriti || "")
+          .toLowerCase()
+          .includes("kapha")
+      ? "kapha"
+      : "vata";
+
+  const startPrakritiReview = () => {
+    setPrakritiEditMode(true);
+    setPrakritiEditState({
+      finalDosha: resolvedPrimaryDosha,
+      doctorNotes: selectedPatient?.vikriti || "",
+      answers: resolvedAssessmentAnswers,
+    });
+  };
+
+  const cancelPrakritiReview = () => {
+    setPrakritiEditMode(false);
+  };
+
+  const handleSavePrakritiReview = async () => {
+    if (!selectedPatient?.id) return;
+
+    const payloadAnswers = prakritiEditState.answers.length === 8
+      ? prakritiEditState.answers
+      : Array(8).fill("Not specified");
+
+    const primaryDoshaCapitalized =
+      prakritiEditState.finalDosha.length > 0
+        ? `${prakritiEditState.finalDosha.charAt(0).toUpperCase()}${prakritiEditState.finalDosha.slice(1)}`
+        : "Vata";
+
+    const vataScore = resolvedPrakritiScores.vata || (prakritiEditState.finalDosha === "vata" ? 5 : 2);
+    const pittaScore = resolvedPrakritiScores.pitta || (prakritiEditState.finalDosha === "pitta" ? 5 : 2);
+    const kaphaScore = resolvedPrakritiScores.kapha || (prakritiEditState.finalDosha === "kapha" ? 5 : 2);
+
+    await savePrakritiAssessmentMutation.mutateAsync({
+      patientId: selectedPatient.id,
+      payload: {
+        answer1: payloadAnswers[0] || "Not specified",
+        answer2: payloadAnswers[1] || "Not specified",
+        answer3: payloadAnswers[2] || "Not specified",
+        answer4: payloadAnswers[3] || "Not specified",
+        answer5: payloadAnswers[4] || "Not specified",
+        answer6: payloadAnswers[5] || "Not specified",
+        answer7: payloadAnswers[6] || "Not specified",
+        answer8: payloadAnswers[7] || "Not specified",
+        vataScore,
+        pittaScore,
+        kaphaScore,
+        primaryDosha: primaryDoshaCapitalized,
+      },
+    });
+
+    await updatePatientProfileMutation.mutateAsync({
+      id: selectedPatient.id,
+      payload: {
+        prakriti: primaryDoshaCapitalized,
+        vikriti: prakritiEditState.doctorNotes,
+        vataScore,
+        pittaScore,
+        kaphaScore,
+      },
+    });
+
+    setPatients((prevPatients) =>
+      prevPatients.map((patient) =>
+        patient.id === selectedPatient.id
+          ? {
+              ...patient,
+              prakriti: primaryDoshaCapitalized,
+              vikriti: prakritiEditState.doctorNotes,
+              vataScore,
+              pittaScore,
+              kaphaScore,
+            }
+          : patient
+      )
+    );
+
+    setSelectedPatient((previousSelected: any) =>
+      previousSelected
+        ? {
+            ...previousSelected,
+            prakriti: primaryDoshaCapitalized,
+            vikriti: prakritiEditState.doctorNotes,
+            vataScore,
+            pittaScore,
+            kaphaScore,
+          }
+        : previousSelected
+    );
+
+    setPrakritiEditMode(false);
+    refetchLatestPrakriti();
   };
 
   // Add Patient Modal Handlers
@@ -593,14 +1328,17 @@ export default function DoctorDashboard({
               <span>Message</span>
             </button>
             <button
-              onClick={() => {
-                window.location.href = "/doctor/dashboard";
-              }}
-              className="text-gray-400 hover:text-gray-600 p-2"
-              aria-label="Back to dashboard"
+              onClick={() => handleCreateDietChart(selectedPatient.id)}
+              className="border border-emerald-300 hover:bg-emerald-50 text-[#1F5C3F] px-4 py-2 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto"
             >
-              <X className="w-5 h-5" />
+              <FileText className="w-4 h-4" />
+              <span>Create Diet Chart</span>
             </button>
+                <span className={`px-3 py-2 rounded-lg text-xs font-semibold ${
+                  profileMode === "consult" ? "bg-[#1F5C3F] text-white" : "bg-gray-100 text-gray-700"
+                }`}>
+                  {profileMode === "consult" ? "Consultation Mode" : "View Mode"}
+                </span>
           </div>
         </div>
 
@@ -768,26 +1506,1171 @@ export default function DoctorDashboard({
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => handleCreateDietChart(selectedPatient.id)}
-                  className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Create Diet Chart</span>
-                </button>
-                <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
-                  <Edit className="w-4 h-4" />
-                  <span>Update Treatment</span>
-                </button>
-                <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center space-x-2">
-                  <Activity className="w-4 h-4" />
-                  <span>View Reports</span>
-                </button>
-              </div>
+              {profileMode === "consult" ? (
+                <div className="space-y-4 mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleCreateDietChart(selectedPatient.id)}
+                      className="border border-[#1F5C3F]/30 bg-emerald-50 hover:bg-emerald-100 text-[#1F5C3F] px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Create Diet Chart Flow</span>
+                      <FileText className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openFieldFlowModal("medications")}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Current Medications / Remedies</span>
+                      <Pill className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openFieldFlowModal("asanas")}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Asanas / Exercises Flow</span>
+                      <Activity className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openFieldFlowModal("therapy")}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Therapy Flow</span>
+                      <Heart className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openFieldFlowModal("tests")}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Tests Flow</span>
+                      <FileText className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => openFieldFlowModal("notes")}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
+                    >
+                      <span>Doctor Notes Flow</span>
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+                    <p><span className="font-medium text-gray-800">Diet Chart:</span> {dietChartItems ? "Configured" : "Not configured"}</p>
+                    <p><span className="font-medium text-gray-800">Medications:</span> {medicationSlots.length > 0 || medicationName || medicationProperties ? "Configured" : "Not configured"}</p>
+                    <p><span className="font-medium text-gray-800">Asanas/Exercises:</span> {exerciseSlots.length > 0 || routinePlan ? "Configured" : "Not configured"}</p>
+                    <p><span className="font-medium text-gray-800">Therapy:</span> {therapyFlowText ? "Configured" : "Not configured"}</p>
+                    <p><span className="font-medium text-gray-800">Tests:</span> {testsFlowText ? "Configured" : "Not configured"}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pathya (Do's)</label>
+                      <Textarea
+                        value={dietStats}
+                        onChange={(event) => setDietStats(event.target.value)}
+                        placeholder="Write Pathya recommendations"
+                        rows={4}
+                        className="border-gray-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Apathya (Don'ts)</label>
+                      <Textarea
+                        value={doctorAnalysis}
+                        onChange={(event) => setDoctorAnalysis(event.target.value)}
+                        placeholder="Write Apathya restrictions"
+                        rows={4}
+                        className="border-gray-300"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={handleSaveTreatmentPlan}
+                      className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{saveDoctorPlanMutation.isPending ? "Saving..." : "Save Treatment Plan"}</span>
+                    </button>
+                    {planConfirmed && (
+                      <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
+                        Plan saved successfully
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-[#1F5C3F]" />
+                      Prakriti Assessment
+                    </h4>
+                    {!prakritiEditMode ? (
+                      <button
+                        onClick={startPrakritiReview}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+                      >
+                        <Edit className="w-4 h-4" /> Review & Update
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {isLatestPrakritiLoading ? (
+                    <Skeleton className="h-40 w-full rounded-xl" />
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {Object.entries(doshaReviewConfig).map(([key, config]) => {
+                          const IconComp = config.icon;
+                          const value = key === "vata"
+                            ? resolvedPrakritiScores.vata
+                            : key === "pitta"
+                            ? resolvedPrakritiScores.pitta
+                            : resolvedPrakritiScores.kapha;
+                          const percentage = Math.min(100, Math.max(0, (Number(value) / 8) * 100));
+
+                          return (
+                            <div key={key} className={`p-3 rounded-lg border ${config.borderColor} ${config.bgColor}`}>
+                              <div className="flex items-center gap-2 mb-2">
+                                <IconComp className={`w-4 h-4 ${config.color}`} />
+                                <span className={`font-medium text-sm ${config.color}`}>{config.name}</span>
+                              </div>
+                              <div className="flex justify-between items-center mb-1">
+                                <span className={`text-lg font-bold ${config.color}`}>{Number(value) || 0}</span>
+                                <span className="text-xs text-slate-500">{percentage.toFixed(0)}%</span>
+                              </div>
+                              <div className="w-full bg-white/80 rounded-full h-1.5 border border-slate-200">
+                                <div className="h-1.5 rounded-full bg-[#1F5C3F]" style={{ width: `${percentage}%` }}></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-slate-900">Assessment Response</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          {prakritiQuestions.map((question, index) => (
+                            <div
+                              key={question.id}
+                              className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200"
+                            >
+                              <span className="font-medium text-slate-600">{question.label}:</span>
+                              <span className="text-slate-800 capitalize ml-auto text-right break-words">
+                                {resolvedAssessmentAnswers[index] || "Not specified"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {prakritiEditMode ? (
+                        <div className="space-y-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                          <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+                            <Edit className="w-4 h-4 text-[#1F5C3F]" /> Medical Review & Verification
+                          </h4>
+
+                          <div>
+                            <label className="text-sm font-medium text-slate-700 mb-2 block">
+                              Final Constitutional Type
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {Object.entries(doshaReviewConfig).map(([key, config]) => {
+                                const IconComp = config.icon;
+                                return (
+                                  <label key={key} className="flex items-center gap-2 p-2 border border-slate-200 rounded-lg bg-white cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name="final-dosha"
+                                      value={key}
+                                      checked={prakritiEditState.finalDosha === key}
+                                      onChange={() =>
+                                        setPrakritiEditState((prev) => ({
+                                          ...prev,
+                                          finalDosha: key as "vata" | "pitta" | "kapha",
+                                        }))
+                                      }
+                                    />
+                                    <IconComp className={`w-4 h-4 ${config.color}`} />
+                                    <span className="text-sm font-medium text-slate-800">{config.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-slate-700 mb-2 block">
+                              Clinical Notes & Vikriti Observations
+                            </label>
+                            <Textarea
+                              value={prakritiEditState.doctorNotes}
+                              onChange={(event) =>
+                                setPrakritiEditState((prev) => ({
+                                  ...prev,
+                                  doctorNotes: event.target.value,
+                                }))
+                              }
+                              placeholder="Add your clinical observations and Vikriti notes..."
+                              rows={4}
+                              className="border-slate-300"
+                            />
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <button
+                              onClick={handleSavePrakritiReview}
+                              disabled={
+                                !prakritiEditState.finalDosha ||
+                                savePrakritiAssessmentMutation.isPending ||
+                                updatePatientProfileMutation.isPending
+                              }
+                              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                            >
+                              <Save className="w-4 h-4" />
+                              {savePrakritiAssessmentMutation.isPending || updatePatientProfileMutation.isPending
+                                ? "Saving..."
+                                : "Verify & Save"}
+                            </button>
+                            <button
+                              onClick={cancelPrakritiReview}
+                              className="w-full sm:w-auto border border-slate-300 text-slate-700 hover:bg-slate-100 px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                            >
+                              <X className="w-4 h-4" /> Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-medium text-slate-600">Final Constitution:</span>
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-[#1F5C3F] border border-emerald-200">
+                              {String(selectedPatient.prakriti || resolvedPrimaryDosha).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-sm font-medium text-slate-600">Vikriti Notes:</span>
+                            <p className="text-sm text-slate-800 bg-white p-3 rounded border border-slate-200 mt-1">
+                              {selectedPatient.vikriti || "No clinical Vikriti notes recorded yet."}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {showDietFlowModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 rounded-t-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-[#1F5C3F] rounded-lg">
+                      <Edit className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">Create Diet Chart</h2>
+                      <p className="text-sm text-slate-600">{dietFlowChart.patientName} • {dietFlowChart.prakriti} Constitution</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowDietFlowModal(false)} className="text-slate-500 hover:text-slate-700">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-4 mt-4 overflow-x-auto">
+                  {[
+                    { step: 1, title: "Food Selection", icon: Utensils },
+                    { step: 2, title: "Meal Planning", icon: Clock },
+                    { step: 3, title: "Recommendations", icon: BookOpen },
+                    { step: 4, title: "Review & Publish", icon: CheckCircle },
+                  ].map(({ step, title, icon: Icon }) => (
+                    <div key={step} className="flex items-center space-x-2">
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                        dietFlowStep === step
+                          ? "bg-[#1F5C3F] text-white"
+                          : dietFlowStep > step
+                          ? "bg-green-600 text-white"
+                          : "bg-slate-200 text-slate-600"
+                      }`}>
+                        {dietFlowStep > step ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                      </div>
+                      <span className={`text-sm font-medium ${
+                        dietFlowStep === step
+                          ? "text-[#1F5C3F]"
+                          : dietFlowStep > step
+                          ? "text-green-600"
+                          : "text-slate-500"
+                      }`}>
+                        {title}
+                      </span>
+                      {step < 4 && <ChevronRight className="h-4 w-4 text-slate-400" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6">
+                {dietFlowStep === 1 && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold text-slate-900">Select Foods for Meals</h3>
+                    <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
+                      {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, index) => (
+                        <button
+                          key={meal}
+                          onClick={() => setDietFlowSelectedMealIdx(index)}
+                          className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${
+                            dietFlowSelectedMealIdx === index ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
+                          }`}
+                        >
+                          {meal}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#10B981] focus:border-[#10B981]"
+                      placeholder="Search foods by name, category, or therapeutic properties..."
+                      value={dietFlowSearch}
+                      onChange={(event) => setDietFlowSearch(event.target.value)}
+                    />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="font-medium text-slate-900 mb-3">Available Foods</h4>
+                        <div className="bg-slate-50 rounded-lg p-4 max-h-96 overflow-y-auto space-y-2">
+                          {mockFoodDatabase
+                            .filter((food) =>
+                              food.name.toLowerCase().includes(dietFlowSearch.toLowerCase()) ||
+                              food.category.toLowerCase().includes(dietFlowSearch.toLowerCase()) ||
+                              food.rasa.toLowerCase().includes(dietFlowSearch.toLowerCase()) ||
+                              food.dosha.toLowerCase().includes(dietFlowSearch.toLowerCase())
+                            )
+                            .map((food) => (
+                              <div key={food.id} className="bg-white rounded-lg p-3 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div>
+                                    <h5 className="font-medium text-slate-900">{food.name}</h5>
+                                    <div className="text-xs text-slate-600">{food.category} • {food.calories} kcal</div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleDietFlowAddFood(food)}
+                                    className="px-3 py-1.5 text-xs bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white rounded"
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="px-2 py-1 rounded bg-emerald-100 text-[#1F5C3F]">{food.rasa}</span>
+                                  <span className="px-2 py-1 rounded bg-green-100 text-green-700">{food.dosha}</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium text-slate-900 mb-3">Selected for {dietFlowChart.meals[dietFlowSelectedMealIdx]?.meal}</h4>
+                        <div className="bg-emerald-50 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-medium text-[#1F5C3F]">Total Calories</span>
+                            <span className="text-lg font-bold text-[#1F5C3F]">{dietFlowChart.meals[dietFlowSelectedMealIdx]?.calories || 0} kcal</span>
+                          </div>
+
+                          {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).length === 0 ? (
+                            <div className="text-center py-8 text-slate-500">
+                              <Utensils className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p>No foods selected for this meal</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).map((food: string, index: number) => (
+                                <div key={`${food}-${index}`} className="flex items-center justify-between bg-white rounded-lg p-3">
+                                  <span className="font-medium text-slate-900">{food}</span>
+                                  <button
+                                    onClick={() => handleDietFlowRemoveFood(index)}
+                                    className="px-3 py-1.5 text-xs border border-red-300 text-red-700 hover:bg-red-50 rounded"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-4 border-t">
+                      <button
+                        onClick={() => setDietFlowStep(2)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        Next: Meal Planning <ChevronRight className="h-4 w-4 ml-1" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 2 && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold text-slate-900">Add Therapeutic Rationale</h3>
+                    <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-4">
+                      {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, index) => (
+                        <button
+                          key={meal}
+                          onClick={() => setDietFlowSelectedMealIdx(index)}
+                          className={`flex-1 px-3 py-2 rounded-md text-sm font-medium ${
+                            dietFlowSelectedMealIdx === index ? "bg-white shadow-sm text-slate-900" : "text-slate-600"
+                          }`}
+                        >
+                          {meal} ({dietFlowChart.meals[index]?.foods?.length || 0})
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="bg-slate-50 rounded-lg p-6">
+                      <h4 className="font-medium text-slate-900 mb-2">{dietFlowChart.meals[dietFlowSelectedMealIdx]?.meal} - {dietFlowChart.meals[dietFlowSelectedMealIdx]?.time}</h4>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).map((food: string, index: number) => (
+                          <span key={`${food}-${index}`} className="px-2 py-1 rounded bg-emerald-100 text-[#1F5C3F] text-xs">{food}</span>
+                        ))}
+                      </div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Therapeutic Rationale *</label>
+                      <Textarea
+                        value={dietFlowChart.meals[dietFlowSelectedMealIdx]?.rationale || ""}
+                        onChange={(event) => handleDietFlowRationale(event.target.value)}
+                        rows={4}
+                        className="border-slate-300"
+                        placeholder="Explain the therapeutic benefits of this meal combination..."
+                      />
+                    </div>
+
+                    <div className="flex justify-between pt-4 border-t">
+                      <button
+                        onClick={() => setDietFlowStep(1)}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Back to Food Selection
+                      </button>
+                      <button
+                        onClick={() => setDietFlowStep(3)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        Next: Recommendations <ChevronRight className="h-4 w-4 ml-1" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 3 && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold text-slate-900">General Lifestyle Recommendations</h3>
+                    <div className="bg-slate-50 rounded-lg p-6">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Dietary and Lifestyle Guidelines *</label>
+                      <Textarea
+                        value={dietFlowChart.recommendations.join("\n")}
+                        onChange={(event) => handleDietFlowRecommendations(event.target.value)}
+                        rows={8}
+                        className="border-slate-300"
+                        placeholder="Enter personalized recommendations, one per line"
+                      />
+                    </div>
+                    <div className="flex justify-between pt-4 border-t">
+                      <button
+                        onClick={() => setDietFlowStep(2)}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Back to Meal Planning
+                      </button>
+                      <button
+                        onClick={() => setDietFlowStep(4)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        Review & Publish <ChevronRight className="h-4 w-4 ml-1" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 4 && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold text-slate-900">Review Diet Chart</h3>
+                    <div className="bg-slate-50 rounded-lg p-6 space-y-6">
+                      <div className="bg-white rounded-lg p-4">
+                        <h4 className="font-semibold text-slate-900 mb-3">Patient Information</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div><span className="text-slate-600">Name:</span> <span className="ml-2 font-medium">{dietFlowChart.patientName}</span></div>
+                          <div><span className="text-slate-600">Constitution:</span> <span className="ml-2 px-2 py-1 rounded bg-emerald-100 text-[#1F5C3F] text-xs font-medium">{dietFlowChart.prakriti}</span></div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4">
+                        <h4 className="font-semibold text-slate-900 mb-3">Daily Meal Plan</h4>
+                        <div className="space-y-4">
+                          {dietFlowChart.meals.map((meal: any, index: number) => (
+                            <div key={index} className="border border-slate-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <h5 className="font-medium text-slate-900">{meal.meal}</h5>
+                                <div className="text-sm text-slate-600">{meal.time} • {meal.calories} kcal</div>
+                              </div>
+                              <div className="mb-2 text-sm"><span className="text-slate-600">Foods: </span>{meal.foods.join(", ") || "None selected"}</div>
+                              {meal.rationale ? <div className="text-sm text-slate-700 italic bg-slate-50 p-2 rounded">{meal.rationale}</div> : null}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4">
+                        <h4 className="font-semibold text-slate-900 mb-3">Lifestyle Recommendations</h4>
+                        {dietFlowChart.recommendations.length > 0 ? (
+                          <ul className="space-y-1 text-sm text-slate-700">
+                            {dietFlowChart.recommendations.map((recommendation: string, index: number) => (
+                              <li key={index} className="flex items-start">
+                                <CheckCircle className="h-4 w-4 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+                                {recommendation}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-slate-500">No recommendations added</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between pt-4 border-t">
+                      <button
+                        onClick={() => setDietFlowStep(3)}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Back to Recommendations
+                      </button>
+                      <button
+                        onClick={handleDietFlowPublish}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" /> Publish Diet Chart
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showFieldFlowModal && fieldFlowType && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 rounded-t-xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-900">{fieldFlowLabel}</h3>
+                  <button
+                    onClick={() => {
+                      setShowFieldFlowModal(false);
+                      setFieldFlowType(null);
+                      setFieldFlowStep(1);
+                    }}
+                    className="text-slate-500 hover:text-slate-700"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3 mt-4">
+                  {((fieldFlowType === "medications" || fieldFlowType === "asanas") ? [1, 2] : [1, 2, 3]).map((step) => (
+                    <div key={step} className="flex items-center gap-2">
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                          fieldFlowStep === step
+                            ? "bg-[#1F5C3F] text-white"
+                            : fieldFlowStep > step
+                            ? "bg-green-600 text-white"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {fieldFlowStep > step ? <CheckCircle className="w-3 h-3" /> : step}
+                      </div>
+                      <span className="text-xs text-slate-600">
+                        {(fieldFlowType === "medications" || fieldFlowType === "asanas")
+                          ? step === 1
+                            ? "Create Slots"
+                            : "Summary & AI"
+                          : step === 1
+                          ? "Input"
+                          : step === 2
+                          ? "Organize"
+                          : "Confirm"}
+                      </span>
+                      {step < ((fieldFlowType === "medications" || fieldFlowType === "asanas") ? 2 : 3) && <ChevronRight className="w-3 h-3 text-slate-400" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {fieldFlowType === "medications" && (
+                  <>
+                    {fieldFlowStep === 1 && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-slate-600">
+                            Create medication slots, choose remedies from cards, and set exact dosage/timing details.
+                          </p>
+                          <button
+                            onClick={createMedicationSlot}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-3 py-2 rounded-lg text-xs font-semibold"
+                          >
+                            + Create Slot
+                          </button>
+                        </div>
+
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                          {medicationSlotsDraft.length === 0 ? (
+                            <div className="border border-dashed border-slate-300 rounded-lg p-4 text-sm text-slate-500 text-center">
+                              No slots created yet.
+                            </div>
+                          ) : (
+                            medicationSlotsDraft
+                              .slice()
+                              .sort((slotA, slotB) => (slotA.timing || "99:99").localeCompare(slotB.timing || "99:99"))
+                              .map((slot, index) => {
+                                const selectedRemedy = remedyCatalog.find((remedy) => remedy.id === slot.remedyId);
+                                return (
+                                  <div key={slot.id} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <h4 className="text-sm font-semibold text-slate-900">Slot {index + 1}</h4>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => setActiveMedicationSlotId(slot.id)}
+                                          className={`px-2 py-1 rounded text-xs ${
+                                            activeMedicationSlotId === slot.id
+                                              ? "bg-emerald-200 text-[#1F5C3F]"
+                                              : "bg-white text-slate-700 border border-slate-300"
+                                          }`}
+                                        >
+                                          Browse Remedies
+                                        </button>
+                                        <button
+                                          onClick={() => removeMedicationSlot(slot.id)}
+                                          className="px-2 py-1 rounded text-xs border border-red-300 text-red-700 hover:bg-red-50"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <div className="text-xs text-slate-600 bg-white border border-slate-200 rounded p-2">
+                                        <div className="font-semibold text-slate-800 mb-1">Selected Remedy</div>
+                                        {selectedRemedy ? (
+                                          <>
+                                            <div className="font-medium">{selectedRemedy.medicineName}</div>
+                                            <div>Type: {selectedRemedy.medicineType}</div>
+                                            <div>Properties: {selectedRemedy.ayurvedicProperties.join(", ")}</div>
+                                          </>
+                                        ) : (
+                                          <div>No remedy selected.</div>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        <input
+                                          type="time"
+                                          value={slot.timing}
+                                          onChange={(event) => updateMedicationSlot(slot.id, "timing", event.target.value)}
+                                          className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+                                        />
+                                        <input
+                                          value={slot.dosage}
+                                          onChange={(event) => updateMedicationSlot(slot.id, "dosage", event.target.value)}
+                                          placeholder="Dosage (e.g. 1 tsp after meal)"
+                                          className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                                      <Textarea
+                                        value={slot.doctorNotes}
+                                        onChange={(event) => updateMedicationSlot(slot.id, "doctorNotes", event.target.value)}
+                                        placeholder="Doctor notes for this medicine"
+                                        rows={2}
+                                        className="border-slate-300"
+                                      />
+                                      <Textarea
+                                        value={slot.importantDetails}
+                                        onChange={(event) => updateMedicationSlot(slot.id, "importantDetails", event.target.value)}
+                                        placeholder="Additional important details"
+                                        rows={2}
+                                        className="border-slate-300"
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                          <div className="text-sm font-semibold text-slate-900 mb-2">Remedy Browser</div>
+                          <p className="text-xs text-slate-500 mb-3">
+                            Select a slot first, then choose a remedy card to attach it.
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[260px] overflow-y-auto pr-1">
+                            {remedyCatalog.map((remedy) => (
+                              <button
+                                key={remedy.id}
+                                disabled={!activeMedicationSlotId}
+                                onClick={() => {
+                                  if (!activeMedicationSlotId) return;
+                                  updateMedicationSlot(activeMedicationSlotId, "remedyId", remedy.id);
+                                }}
+                                className={`text-left border rounded-lg p-3 transition-colors ${
+                                  !activeMedicationSlotId
+                                    ? "opacity-60 cursor-not-allowed border-slate-200"
+                                    : "border-emerald-200 hover:bg-emerald-50"
+                                }`}
+                              >
+                                <div className="font-semibold text-slate-900 text-sm">{remedy.medicineName}</div>
+                                <div className="text-xs text-slate-600 mt-1">Type: {remedy.medicineType}</div>
+                                <div className="text-xs text-slate-600 mt-1">Herbs: {remedy.herbsUsed.join(", ")}</div>
+                                <div className="text-xs text-slate-600 mt-1">Properties: {remedy.ayurvedicProperties.join(", ")}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button
+                            onClick={() => {
+                              setShowFieldFlowModal(false);
+                              setFieldFlowType(null);
+                              setFieldFlowStep(1);
+                            }}
+                            className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => setFieldFlowStep(2)}
+                            disabled={medicationSlotsDraft.filter((slot) => slot.remedyId && slot.timing).length === 0}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                          >
+                            Next: Summary & AI <ChevronRight className="w-4 h-4 ml-1" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {fieldFlowStep === 2 && (
+                      <>
+                        <p className="text-sm text-slate-600">
+                          Review sorted medicine schedule, dosage summaries, and AI conflict analysis before locking.
+                        </p>
+
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                          {medicationSlotsDraft
+                            .filter((slot) => slot.remedyId && slot.timing)
+                            .slice()
+                            .sort((slotA, slotB) => slotA.timing.localeCompare(slotB.timing))
+                            .map((slot, index) => {
+                              const selectedRemedy = remedyCatalog.find((remedy) => remedy.id === slot.remedyId);
+                              if (!selectedRemedy) return null;
+                              return (
+                                <div key={slot.id} className="border border-emerald-200 bg-emerald-50 rounded-lg p-3">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <h4 className="font-semibold text-sm text-[#1F5C3F]">#{index + 1} {selectedRemedy.medicineName}</h4>
+                                    <span className="text-xs font-semibold text-slate-700">{slot.timing}</span>
+                                  </div>
+                                  <div className="text-xs text-slate-700">Dosage: {slot.dosage || "Not specified"}</div>
+                                  <div className="text-xs text-slate-700">Type: {selectedRemedy.medicineType}</div>
+                                  <div className="text-xs text-slate-700">Herbs: {selectedRemedy.herbsUsed.join(", ")}</div>
+                                  <div className="text-xs text-slate-700">Ayurvedic Properties: {selectedRemedy.ayurvedicProperties.join(", ")}</div>
+                                  {slot.doctorNotes ? <div className="text-xs text-slate-700">Doctor Notes: {slot.doctorNotes}</div> : null}
+                                  {slot.importantDetails ? <div className="text-xs text-slate-700">Important: {slot.importantDetails}</div> : null}
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-2">AI Analysis</h4>
+                          <div className="space-y-2">
+                            {medicationAiAnalysis.map((analysis, index) => (
+                              <div
+                                key={`${analysis.text}-${index}`}
+                                className={`text-xs rounded p-2 border ${
+                                  analysis.level === "warning"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : "bg-emerald-50 text-[#1F5C3F] border-emerald-200"
+                                }`}
+                              >
+                                {analysis.text}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button
+                            onClick={() => setFieldFlowStep(1)}
+                            className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                          >
+                            Back to Slot Setup
+                          </button>
+                          <button
+                            onClick={saveFieldFlowModal}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                          >
+                            Confirm & Lock
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {fieldFlowType === "asanas" && (
+                  <>
+                    {fieldFlowStep === 1 && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-slate-600">
+                            Create asana/yoga/exercise slots, choose routines from cards, and set timing and instructions.
+                          </p>
+                          <button
+                            onClick={createExerciseSlot}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-3 py-2 rounded-lg text-xs font-semibold"
+                          >
+                            + Create Slot
+                          </button>
+                        </div>
+
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                          {exerciseSlotsDraft.length === 0 ? (
+                            <div className="border border-dashed border-slate-300 rounded-lg p-4 text-sm text-slate-500 text-center">
+                              No slots created yet.
+                            </div>
+                          ) : (
+                            exerciseSlotsDraft
+                              .slice()
+                              .sort((slotA, slotB) => (slotA.timing || "99:99").localeCompare(slotB.timing || "99:99"))
+                              .map((slot, index) => {
+                                const selectedExercise = exerciseCatalog.find((exercise) => exercise.id === slot.exerciseId);
+                                return (
+                                  <div key={slot.id} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <h4 className="text-sm font-semibold text-slate-900">Slot {index + 1}</h4>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => setActiveExerciseSlotId(slot.id)}
+                                          className={`px-2 py-1 rounded text-xs ${
+                                            activeExerciseSlotId === slot.id
+                                              ? "bg-emerald-200 text-[#1F5C3F]"
+                                              : "bg-white text-slate-700 border border-slate-300"
+                                          }`}
+                                        >
+                                          Browse Activities
+                                        </button>
+                                        <button
+                                          onClick={() => removeExerciseSlot(slot.id)}
+                                          className="px-2 py-1 rounded text-xs border border-red-300 text-red-700 hover:bg-red-50"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <div className="text-xs text-slate-600 bg-white border border-slate-200 rounded p-2">
+                                        <div className="font-semibold text-slate-800 mb-1">Selected Activity</div>
+                                        {selectedExercise ? (
+                                          <>
+                                            <div className="font-medium">{selectedExercise.name}</div>
+                                            <div>Category: {selectedExercise.category}</div>
+                                            <div>Effects: {selectedExercise.effectProfile.join(", ")}</div>
+                                          </>
+                                        ) : (
+                                          <div>No activity selected.</div>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        <input
+                                          type="time"
+                                          value={slot.timing}
+                                          onChange={(event) => updateExerciseSlot(slot.id, "timing", event.target.value)}
+                                          className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+                                        />
+                                        <input
+                                          value={slot.duration}
+                                          onChange={(event) => updateExerciseSlot(slot.id, "duration", event.target.value)}
+                                          placeholder="Duration (e.g. 20 min)"
+                                          className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                                      <Textarea
+                                        value={slot.doctorNotes}
+                                        onChange={(event) => updateExerciseSlot(slot.id, "doctorNotes", event.target.value)}
+                                        placeholder="Doctor notes for this activity"
+                                        rows={2}
+                                        className="border-slate-300"
+                                      />
+                                      <Textarea
+                                        value={slot.importantDetails}
+                                        onChange={(event) => updateExerciseSlot(slot.id, "importantDetails", event.target.value)}
+                                        placeholder="Precautions / important details"
+                                        rows={2}
+                                        className="border-slate-300"
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                          <div className="text-sm font-semibold text-slate-900 mb-2">Asana/Yoga/Exercise Browser</div>
+                          <p className="text-xs text-slate-500 mb-3">Select a slot first, then choose an activity card.</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[260px] overflow-y-auto pr-1">
+                            {exerciseCatalog.map((exercise) => (
+                              <button
+                                key={exercise.id}
+                                disabled={!activeExerciseSlotId}
+                                onClick={() => {
+                                  if (!activeExerciseSlotId) return;
+                                  updateExerciseSlot(activeExerciseSlotId, "exerciseId", exercise.id);
+                                }}
+                                className={`text-left border rounded-lg p-3 transition-colors ${
+                                  !activeExerciseSlotId
+                                    ? "opacity-60 cursor-not-allowed border-slate-200"
+                                    : "border-emerald-200 hover:bg-emerald-50"
+                                }`}
+                              >
+                                <div className="font-semibold text-slate-900 text-sm">{exercise.name}</div>
+                                <div className="text-xs text-slate-600 mt-1">Category: {exercise.category}</div>
+                                <div className="text-xs text-slate-600 mt-1">Properties: {exercise.ayurvedicProperties.join(", ")}</div>
+                                <div className="text-xs text-slate-600 mt-1">Effect: {exercise.effectProfile.join(", ")}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button
+                            onClick={() => {
+                              setShowFieldFlowModal(false);
+                              setFieldFlowType(null);
+                              setFieldFlowStep(1);
+                            }}
+                            className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => setFieldFlowStep(2)}
+                            disabled={exerciseSlotsDraft.filter((slot) => slot.exerciseId && slot.timing).length === 0}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                          >
+                            Next: Summary & AI <ChevronRight className="w-4 h-4 ml-1" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {fieldFlowStep === 2 && (
+                      <>
+                        <p className="text-sm text-slate-600">Review the activity schedule and AI consequences before locking.</p>
+
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                          {exerciseSlotsDraft
+                            .filter((slot) => slot.exerciseId && slot.timing)
+                            .slice()
+                            .sort((slotA, slotB) => slotA.timing.localeCompare(slotB.timing))
+                            .map((slot, index) => {
+                              const selectedExercise = exerciseCatalog.find((exercise) => exercise.id === slot.exerciseId);
+                              if (!selectedExercise) return null;
+                              return (
+                                <div key={slot.id} className="border border-emerald-200 bg-emerald-50 rounded-lg p-3">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <h4 className="font-semibold text-sm text-[#1F5C3F]">#{index + 1} {selectedExercise.name}</h4>
+                                    <span className="text-xs font-semibold text-slate-700">{slot.timing}</span>
+                                  </div>
+                                  <div className="text-xs text-slate-700">Duration: {slot.duration || "Not specified"}</div>
+                                  <div className="text-xs text-slate-700">Category: {selectedExercise.category}</div>
+                                  <div className="text-xs text-slate-700">Properties: {selectedExercise.ayurvedicProperties.join(", ")}</div>
+                                  {slot.doctorNotes ? <div className="text-xs text-slate-700">Doctor Notes: {slot.doctorNotes}</div> : null}
+                                  {slot.importantDetails ? <div className="text-xs text-slate-700">Precautions: {slot.importantDetails}</div> : null}
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg p-3 bg-white">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-2">AI Consequences (Pros & Cons)</h4>
+                          <div className="space-y-2">
+                            {exerciseAiAnalysis.map((analysis, index) => (
+                              <div
+                                key={`${analysis.text}-${index}`}
+                                className={`text-xs rounded p-2 border ${
+                                  analysis.level === "warning"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : "bg-emerald-50 text-[#1F5C3F] border-emerald-200"
+                                }`}
+                              >
+                                {analysis.text}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button
+                            onClick={() => setFieldFlowStep(1)}
+                            className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                          >
+                            Back to Slot Setup
+                          </button>
+                          <button
+                            onClick={saveFieldFlowModal}
+                            className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                          >
+                            Confirm & Lock
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {fieldFlowType !== "medications" && fieldFlowType !== "asanas" && (
+                  <>
+                {fieldFlowStep === 1 && (
+                  <>
+                    <p className="text-sm text-slate-600">Enter details line-by-line for this treatment section.</p>
+                    <Textarea
+                      value={fieldFlowDraft}
+                      onChange={(event) => setFieldFlowDraft(event.target.value)}
+                      rows={10}
+                      className="border-slate-300"
+                      placeholder="Add details, one item per line"
+                    />
+                    <div className="flex justify-between gap-3 pt-2">
+                      <button
+                        onClick={() => {
+                          setShowFieldFlowModal(false);
+                          setFieldFlowType(null);
+                          setFieldFlowStep(1);
+                        }}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => setFieldFlowStep(2)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        Next <ChevronRight className="w-4 h-4 ml-1" />
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {fieldFlowStep === 2 && (
+                  <>
+                    <p className="text-sm text-slate-600">Review organized items and adjust if needed.</p>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 min-h-[180px]">
+                      {parsedFieldFlowItems.length === 0 ? (
+                        <p className="text-sm text-slate-500">No items entered yet.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {parsedFieldFlowItems.map((item, index) => (
+                            <span
+                              key={`${item}-${index}`}
+                              className="px-2 py-1 rounded-full text-xs bg-emerald-100 text-[#1F5C3F] border border-emerald-200"
+                            >
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Textarea
+                      value={fieldFlowDraft}
+                      onChange={(event) => setFieldFlowDraft(event.target.value)}
+                      rows={5}
+                      className="border-slate-300"
+                    />
+                    <div className="flex justify-between gap-3 pt-2">
+                      <button
+                        onClick={() => setFieldFlowStep(1)}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => setFieldFlowStep(3)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                      >
+                        Review & Confirm <ChevronRight className="w-4 h-4 ml-1" />
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {fieldFlowStep === 3 && (
+                  <>
+                    <p className="text-sm text-slate-600">Confirm this section and attach it to the consultation treatment plan.</p>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-slate-800 mb-2">{fieldFlowLabel} Summary</h4>
+                      {parsedFieldFlowItems.length === 0 ? (
+                        <p className="text-sm text-slate-500">No content entered.</p>
+                      ) : (
+                        <ul className="space-y-1 text-sm text-slate-700 list-disc pl-5">
+                          {parsedFieldFlowItems.map((item, index) => (
+                            <li key={`${item}-${index}`}>{item}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="flex justify-between gap-3 pt-2">
+                      <button
+                        onClick={() => setFieldFlowStep(2)}
+                        className="border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={saveFieldFlowModal}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                      >
+                        Save Flow
+                      </button>
+                    </div>
+                  </>
+                )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1147,12 +3030,20 @@ export default function DoctorDashboard({
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Upcoming Appointments</h2>
                 <button
                   className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto"
-                  onClick={() => setSharedAppointments(getStoredAppointments())}
+                  onClick={() => {
+                    refetchDoctorAppointments();
+                  }}
                 >
                   <RefreshCw className="w-4 h-4" />
                   <span>Refresh</span>
                 </button>
               </div>
+
+              {isDoctorAppointmentsLoading && (
+                <div className="mb-4">
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                </div>
+              )}
 
               {sharedAppointments.filter((appointment) => 
                 getAppointmentDateTime(appointment) >= new Date() && 
@@ -1178,7 +3069,7 @@ export default function DoctorDashboard({
                       return (
                         <div 
                           key={appointment.id} 
-                          className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-shadow h-full group"
+                          className="bg-gradient-to-br from-emerald-50 via-white to-green-50 border border-emerald-200 rounded-2xl p-5 hover:shadow-xl transition-shadow h-full group"
                         >
                           {/* Header with Name and Status */}
                           <div className="flex items-start justify-between gap-3 mb-4">
@@ -1201,6 +3092,23 @@ export default function DoctorDashboard({
                                 : "bg-blue-100 text-blue-700 border border-blue-200"
                             }`}>
                               {isOngoing ? "Ongoing" : isStarted ? "Started" : "Scheduled"}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-[#1F5C3F] border border-emerald-200">
+                              {appointment.patientAge}y • {appointment.patientGender}
+                            </span>
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold border ${
+                                appointment.severity === "severe"
+                                  ? "bg-red-100 text-red-700 border-red-200"
+                                  : appointment.severity === "moderate"
+                                  ? "bg-amber-100 text-amber-700 border-amber-200"
+                                  : "bg-green-100 text-green-700 border-green-200"
+                              }`}
+                            >
+                              {appointment.severity.charAt(0).toUpperCase() + appointment.severity.slice(1)} Priority
                             </span>
                           </div>
 
@@ -1227,10 +3135,24 @@ export default function DoctorDashboard({
                                 {categoryLabelMap[appointment.doctorCategory] || "General Consultation"}
                               </p>
                             </div>
+
+                            <div className="bg-white border border-gray-200 rounded-lg p-3">
+                              <p className="text-xs text-gray-500 mb-1">Assessment</p>
+                              <p className="text-sm font-medium text-gray-800 line-clamp-2">
+                                {appointment.diagnosis || "Consultation follow-up"}
+                              </p>
+                            </div>
+
+                            <div className="bg-white border border-gray-200 rounded-lg p-3">
+                              <p className="text-xs text-gray-500 mb-1">Symptoms / Notes</p>
+                              <p className="text-sm text-gray-700 line-clamp-2">
+                                {appointment.symptoms || appointment.additionalNotes || "No additional notes"}
+                              </p>
+                            </div>
                           </div>
 
                           {/* Actions */}
-                          <div className="pt-4 border-t border-gray-200 space-y-2">
+                          <div className="pt-4 border-t border-emerald-200 space-y-2">
                             <button
                               type="button"
                               onClick={() => downloadAppointmentPdf(appointment)}
@@ -1238,15 +3160,34 @@ export default function DoctorDashboard({
                             >
                               <Download className="w-4 h-4" /> Download PDF
                             </button>
-                            {isOngoing && (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedAppointmentId(appointment.id)}
-                                className="w-full py-2 px-3 bg-gradient-to-r from-[#1F5C3F] to-[#10B981] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-                              >
-                                <Video className="w-4 h-4" /> Start Consultation
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const resolvedPatientId =
+                                  appointment.patientId ||
+                                  patients.find((patient) => patient.name === appointment.patientName)?.id;
+                                if (resolvedPatientId) {
+                                  openPatientProfile(String(resolvedPatientId), "view");
+                                }
+                              }}
+                              className="w-full py-2 px-3 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                            >
+                              <Eye className="w-4 h-4" /> View Profile
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const resolvedPatientId =
+                                  appointment.patientId ||
+                                  patients.find((patient) => patient.name === appointment.patientName)?.id;
+                                if (resolvedPatientId) {
+                                  openPatientProfile(String(resolvedPatientId), "consult", appointment.id);
+                                }
+                              }}
+                              className="w-full py-2 px-3 bg-gradient-to-r from-[#1F5C3F] to-[#10B981] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                            >
+                              <Video className="w-4 h-4" /> Start Appointment
+                            </button>
                           </div>
                         </div>
                       );
@@ -1333,7 +3274,7 @@ export default function DoctorDashboard({
                       <button
                         className="flex items-center justify-center gap-1 px-3 py-2 bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white rounded-lg text-xs font-semibold shadow transition-colors"
                         onClick={() => {
-                          window.location.href = `/doctor/${patient.id}`;
+                          openPatientProfile(String(patient.id), "view");
                         }}
                         title="View Profile"
                       >
@@ -1465,7 +3406,7 @@ export default function DoctorDashboard({
                   </h3>
                   <div className="h-64 sm:h-80">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RechartsBarChart data={mockPatients}>
+                      <RechartsBarChart data={patients}>
                         <XAxis
                           dataKey="name"
                           tick={{ fontSize: 12 }}

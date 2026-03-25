@@ -77,6 +77,9 @@ model HospitalStaff {
   email             String            @unique
   password          String
   name              String
+  age               Int?
+  dateOfBirth       DateTime?
+  gender            String?
   role              StaffRole
   hospitalId        String
   createdAt         DateTime          @default(now())
@@ -90,6 +93,14 @@ model DoctorProfile {
   id            String        @id @default(uuid())
   specialty     String
   experienceYrs Int
+  qualifications String[]     @default([])
+  locality      String?
+  certificates  String?
+  previousWork  String?
+  extraInfo     String?
+  languages     String[]      @default([])
+  caseSummaries String[]      @default([])
+  education     String[]      @default([])
   isAvailable   Boolean       @default(true)
   departmentId  String?
   staffId       String        @unique
@@ -124,7 +135,10 @@ model Appointment {
   doctorId        String
   scheduledAt     DateTime
   status          AppointmentStatus @default(SCHEDULED)
+  problemDescription String?
   patientSymptoms String?
+  severity        String?
+  duration        String?
   aiSummary       String?
   createdAt       DateTime          @default(now())
   dietChart       Json?

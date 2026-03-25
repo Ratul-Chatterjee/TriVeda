@@ -1,5 +1,13 @@
 import { apiClient } from './client';
 
+export interface ChangePasswordPayload {
+    staffId?: string;
+    patientId?: string;
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword?: string;
+}
+
 export const authApi = {
     staffLogin: async (credentials: any) => {
         return apiClient.post('/auth/staff/login', credentials);
@@ -10,9 +18,13 @@ export const authApi = {
     patientRegister: async (payload: any) => {
         return apiClient.post('/auth/patient/register', payload);
     },
-    // Admin function to create doctors
+    // Admin function to create staff
+    createStaff: async (staffData: any) => {
+        return apiClient.post('/admin/create-staff', staffData);
+    },
+    // Backward-compat alias
     createDoctor: async (doctorData: any) => {
-        return apiClient.post('/admin/create-doctor', doctorData);
+        return apiClient.post('/admin/create-staff', doctorData);
     },
     getDoctors: async (hospitalId?: string) => {
         const url = hospitalId
@@ -32,5 +44,12 @@ export const authApi = {
     // Fetch available departments
     getDepartments: async () => {
         return apiClient.get('/admin/departments');
+    },
+    checkStaffEmailAvailability: async (email: string) => {
+        const query = new URLSearchParams({ email });
+        return apiClient.get(`/admin/staff-email-availability?${query.toString()}`);
+    },
+    changePassword: async (data: ChangePasswordPayload) => {
+        return apiClient.put('/auth/change-password', data);
     }
 };

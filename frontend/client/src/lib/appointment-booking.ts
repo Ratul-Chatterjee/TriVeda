@@ -11,6 +11,7 @@ export type DoctorCategory =
 
 export interface AppointmentBooking {
   id: string;
+  patientId?: string;
   bookingId: string;
   createdAt: string;
   diagnosis: string;
@@ -29,7 +30,7 @@ export interface AppointmentBooking {
   medicalHistory: string;
   additionalNotes: string;
   assignedDoctor: {
-    id: number;
+    id: string | number;
     name: string;
     department: string;
     experience: number;
@@ -114,7 +115,12 @@ export function downloadAppointmentPdf(booking: AppointmentBooking) {
   line("Age / Gender", `${booking.patientAge} / ${booking.patientGender}`);
   line("Diagnosis", booking.diagnosis);
   line("Symptoms", booking.symptoms || "-" );
-  line("Doctor Category", categoryLabelMap[booking.doctorCategory]);
+  line(
+    "Doctor Category",
+    categoryLabelMap[booking.doctorCategory as DoctorCategory] ||
+      booking.assignedDoctor.department ||
+      String(booking.doctorCategory)
+  );
   line("Assigned Doctor", booking.assignedDoctor.name);
   line("Department", booking.assignedDoctor.department);
   line("Consultation", booking.consultationMode === "video" ? "Video" : "In-Clinic");

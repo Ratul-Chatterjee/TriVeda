@@ -6,6 +6,7 @@ import AssessmentIcon from "@mui/icons-material/Assessment";
 import RestaurantMenuIcon from "@mui/icons-material/RestaurantMenu";
 import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
+import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
 import CloseIcon from "@mui/icons-material/Close";
@@ -42,6 +43,11 @@ const doctorMenuItems = [
     label: "Appointments",
     icon: <EventAvailableIcon fontSize="small" />,
     href: "/doctor/appointments",
+  },
+  {
+    label: "Profile",
+    icon: <PersonIcon fontSize="small" />,
+    href: "/doctor/profile",
   },
 ];
 

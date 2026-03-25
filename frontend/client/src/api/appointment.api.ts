@@ -1,5 +1,27 @@
 import { apiClient } from "./client";
 
+export type DiagnosisResponse = {
+  final_symptoms: string[];
+  final_severity: string;
+  final_duration: string;
+  dosha_indicator: string;
+  recommended_department_id: string;
+  recommended_department_name: string;
+  recommended_department_description: string;
+  matchedDepartment: { id: string; name: string } | null;
+  availableDepartments: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    _count?: { doctors: number };
+  }>;
+  debug?: {
+    departmentHint: string;
+    departmentsFound: number;
+    matchedFound: boolean;
+  };
+};
+
 export const appointmentApi = {
   // 1. Smart Triage (NLP Diagnosis)
   diagnoseSymptoms: async (data: {
@@ -7,8 +29,22 @@ export const appointmentApi = {
     providedSymptoms?: string[];
     providedSeverity?: string | null;
     providedDuration?: string | null;
+  }): Promise<DiagnosisResponse> => {
+    return apiClient.post("/appointments/diagnose", data) as any;
+  },
+
+  getDepartments: async () => {
+    return apiClient.get("/appointments/departments");
+  },
+
+  getDoctorsByDepartment: async (params: {
+    departmentId?: string;
+    departmentName?: string;
   }) => {
-    return apiClient.post("/appointments/diagnose", data);
+    const query = new URLSearchParams();
+    if (params.departmentId) query.set("departmentId", params.departmentId);
+    if (params.departmentName) query.set("departmentName", params.departmentName);
+    return apiClient.get(`/appointments/doctors?${query.toString()}`);
   },
 
   // 2. Fetch Available Time Slots
@@ -47,11 +83,35 @@ export const appointmentApi = {
     return apiClient.get(`/appointments/patient/${patientId}/dashboard`);
   },
 
+  reschedulePatientAppointment: async (
+    patientId: string,
+    appointmentId: string,
+    payload: { date: string; time: string }
+  ) => {
+    return apiClient.put(
+      `/appointments/patient/${patientId}/${appointmentId}/reschedule`,
+      { patientId, ...payload }
+    );
+  },
+
+  cancelPatientAppointment: async (patientId: string, appointmentId: string) => {
+    return apiClient.delete(`/appointments/patient/${patientId}/${appointmentId}`, {
+      data: { patientId },
+    });
+  },
+  deletePatientAppointment: async (patientId: string, appointmentId: string) => {
+    return appointmentApi.cancelPatientAppointment(patientId, appointmentId);
+  },
+
   // 8. Save Prakriti Assessment Results
   savePrakritiAssessment: async (patientId: string, payload: any) => {
     return apiClient.post(
       `/appointments/patient/${patientId}/prakriti-assessment`,
       payload,
     );
+  },
+
+  getLatestPrakritiAssessment: async (patientId: string) => {
+    return apiClient.get(`/appointments/patient/${patientId}/prakriti-assessment?latest=true`);
   }
 };

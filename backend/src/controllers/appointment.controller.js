@@ -4,6 +4,22 @@ import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
+const ALL_POSSIBLE_SLOTS = [
+  "09:00 AM",
+  "10:00 AM",
+  "11:00 AM",
+  "12:00 PM",
+  "02:00 PM",
+  "03:00 PM",
+  "04:00 PM",
+  "05:00 PM",
+];
+
+const toTitleCase = (value = "") =>
+  String(value)
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
 // ==========================================
 // 1. SMART INTAKE
 // ==========================================
@@ -26,6 +42,9 @@ export const diagnoseSymptoms = asyncHandler(async (req, res) => {
     select: { id: true, name: true, description: true },
   });
 
+  console.log("Total departments in DB:", departments.length);
+  console.log("Department names:", departments.map(d => d.name));
+
   try {
     const aiMicroserviceUrl =
       process.env.AI_MICROSERVICE_URL || "http://localhost:8000";
@@ -37,12 +56,181 @@ export const diagnoseSymptoms = asyncHandler(async (req, res) => {
       available_departments: departments,
     });
 
+    const aiPayload = aiResponse?.data || {};
+    console.log("AI RESPONSE:", JSON.stringify(aiPayload, null, 2));
+    
+    const departmentHint =
+      aiPayload?.recommended_department_name ||
+      aiPayload?.departmentName ||
+      aiPayload?.department ||
+      aiPayload?.predicted_department ||
+      aiPayload?.recommended_department ||
+      aiPayload?.top_department ||
+      aiPayload?.triage_department ||
+      "";
+
+    console.log("Department hint extracted:", departmentHint);
+    console.log("Available departments in memory:", departments.map(d => d.name));
+
+    let matchedDepartment = null;
+
+    if (departmentHint) {
+      const normalizedHint = String(departmentHint).trim().toLowerCase();
+      console.log("Normalized hint:", normalizedHint);
+      
+      // First try exact match
+      matchedDepartment = departments.find((dept) => {
+        const deptNameLower = dept.name.toLowerCase();
+        const isMatch = deptNameLower === normalizedHint;
+        console.log(`Exact match check: "${normalizedHint}" vs "${deptNameLower}" = ${isMatch}`);
+        return isMatch;
+      });
+
+      // If no exact match, try partial match
+      if (!matchedDepartment) {
+        console.log("=== GET DOCTORS BY DEPARTMENT ===");
+        console.log("departmentId:", departmentId);
+        console.log("departmentName:", departmentName);
+
+        throw new ApiError(400, "departmentId or departmentName is required.");
+        console.log("No exact match found, trying partial match...");
+        matchedDepartment = departments.find((dept) => {
+          const deptNameLower = dept.name.toLowerCase();
+          const hintsIncludesDeptName = normalizedHint.includes(deptNameLower);
+          const deptNameIncludesHint = deptNameLower.includes(normalizedHint);
+
+      console.log("Query filter:", {
+        isAvailable: true,
+        departmentId: departmentId || undefined,
+        departmentName: normalizedDepartmentName || undefined,
+      });
+          const isMatch = hintsIncludesDeptName || deptNameIncludesHint;
+          console.log(`Partial match: "${normalizedHint}" vs "${deptNameLower}" = ${isMatch}`);
+          return isMatch;
+        });
+      }
+    }
+
+    console.log("Final matched department:", matchedDepartment);
+
+    // If no match found in database but NLP returned a department name, try to create or return a meaningful response
+    if (!matchedDepartment && departments.length === 0) {
+      console.warn("WARNING: No departments found in database! Departments might not be seeded.");
+      throw new ApiError(500, "No departments available in the system. Please contact support.");
+    }
+
+    const responsePayload = {
+      ...aiPayload,
+      matchedDepartment: matchedDepartment
+        ? { id: matchedDepartment.id, name: matchedDepartment.name }
+        : null,
+      availableDepartments: departments,
+      debug: {
+        departmentHint: departmentHint,
+        departmentsFound: departments.length,
+        matchedFound: !!matchedDepartment,
+      },
+    };
+
+    console.log("Response payload matchedDepartment:", responsePayload.matchedDepartment);
+    console.log("Full response payload:", JSON.stringify(responsePayload, null, 2));
+
     return res
       .status(200)
-      .json(new ApiResponse(200, aiResponse.data, "Diagnosis complete."));
+      .json(new ApiResponse(200, responsePayload, "Diagnosis complete."));
   } catch (error) {
     throw new ApiError(503, "The AI Triage service is currently unavailable.");
   }
+      console.log(`Found ${doctors.length} doctors for departmentId: ${departmentId || departmentName}`);
+      console.log("Doctors data:", doctors);
+});
+
+export const getDepartments = asyncHandler(async (_req, res) => {
+  console.log("Fetching all departments...");
+  const departments = await prisma.department.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      _count: {
+        select: { doctors: true },
+      },
+    },
+  });
+  console.log("Mapped doctors response:", mappedDoctors);
+  console.log(`Found ${departments.length} departments:`, departments.map(d => d.name));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, departments, "Departments fetched."));
+});
+
+export const getDoctorsByDepartment = asyncHandler(async (req, res) => {
+  const departmentId = req.query?.departmentId
+    ? String(req.query.departmentId)
+    : "";
+  const departmentName = req.query?.departmentName
+    ? String(req.query.departmentName)
+    : "";
+
+  if (!departmentId && !departmentName) {
+    throw new ApiError(400, "departmentId or departmentName is required.");
+  }
+
+  const normalizedDepartmentName = departmentName
+    ? toTitleCase(departmentName.trim())
+    : "";
+
+  const doctors = await prisma.doctorProfile.findMany({
+    where: {
+      isAvailable: true,
+      ...(departmentId
+        ? { departmentId }
+        : {
+            department: {
+              name: {
+                equals: normalizedDepartmentName,
+                mode: "insensitive",
+              },
+            },
+          }),
+    },
+    orderBy: [{ experienceYrs: "desc" }, { staff: { name: "asc" } }],
+    select: {
+      staffId: true,
+      specialty: true,
+      experienceYrs: true,
+      departmentId: true,
+      department: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      staff: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  const mappedDoctors = doctors.map((doctor) => ({
+    id: doctor.staff.id,
+    name: doctor.staff.name,
+    email: doctor.staff.email,
+    specialty: doctor.specialty,
+    experienceYrs: doctor.experienceYrs,
+    departmentId: doctor.departmentId,
+    departmentName: doctor.department?.name || null,
+  }));
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, mappedDoctors, "Doctors fetched."));
 });
 
 // ==========================================
@@ -53,6 +241,11 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
 
   if (!departmentId || !date) {
     throw new ApiError(400, "Department ID and Date are required.");
+  }
+
+  const requestedDate = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(requestedDate.getTime())) {
+    throw new ApiError(400, "Invalid date format. Use YYYY-MM-DD.");
   }
 
   // REFACTOR: We now query DoctorProfile which is linked to HospitalStaff
@@ -69,16 +262,11 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
   }
 
   const doctorIds = doctors.map((doc) => doc.staffId);
-  const allPossibleSlots = [
-    "09:00 AM",
-    "10:00 AM",
-    "11:00 AM",
-    "12:00 PM",
-    "02:00 PM",
-    "03:00 PM",
-    "04:00 PM",
-    "05:00 PM",
-  ];
+
+  if (doctorId && doctorIds.length !== 1) {
+    throw new ApiError(404, "Selected doctor is not available in this department.");
+  }
+
   const startOfDay = new Date(`${date}T00:00:00.000Z`);
   const endOfDay = new Date(`${date}T23:59:59.999Z`);
 
@@ -101,13 +289,37 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
     bookingsPerSlot[timeString] = (bookingsPerSlot[timeString] || 0) + 1;
   });
 
-  const availableSlots = allPossibleSlots.filter(
-    (slot) => (bookingsPerSlot[slot] || 0) < doctorIds.length
-  );
+  const now = new Date();
+  const availableSlots = ALL_POSSIBLE_SLOTS.filter((slot) => {
+    const [time, meridiem] = slot.split(" ");
+    const [hourRaw, minuteRaw] = time.split(":").map(Number);
+    let hour = hourRaw;
+
+    if (meridiem === "PM" && hour < 12) hour += 12;
+    if (meridiem === "AM" && hour === 12) hour = 0;
+
+    const slotDate = new Date(`${date}T00:00:00.000Z`);
+    slotDate.setUTCHours(hour, minuteRaw, 0, 0);
+
+    const isFutureSlot = slotDate.getTime() > now.getTime();
+    const hasCapacity = (bookingsPerSlot[slot] || 0) < doctorIds.length;
+
+    return isFutureSlot && hasCapacity;
+  });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { date, availableSlots }, "Slots fetched."));
+    .json(
+      new ApiResponse(
+        200,
+        {
+          date,
+          doctorCount: doctorIds.length,
+          availableSlots,
+        },
+        "Slots fetched."
+      )
+    );
 });
 
 // ==========================================
@@ -121,6 +333,9 @@ export const bookAppointment = asyncHandler(async (req, res) => {
     date,
     finalSymptoms,
     doctorId,
+    problemDescription,
+    severity,
+    duration,
   } = req.body;
 
   if (
@@ -141,6 +356,21 @@ export const bookAppointment = asyncHandler(async (req, res) => {
   let aiSummaryText = doctorId
     ? "Manually selected by patient."
     : "Assigned based on availability.";
+
+  if (doctorId) {
+    const selectedDoctorProfile = await prisma.doctorProfile.findFirst({
+      where: {
+        staffId: doctorId,
+        departmentId,
+        isAvailable: true,
+      },
+      select: { staffId: true },
+    });
+
+    if (!selectedDoctorProfile) {
+      throw new ApiError(400, "Selected doctor is not available for this department.");
+    }
+  }
 
   // If no doctor was manually selected, run the AI Matchmaker
   if (!doctorId) {
@@ -186,14 +416,46 @@ export const bookAppointment = asyncHandler(async (req, res) => {
     `${date}T${hours.toString().padStart(2, "0")}:${timeParts[2]}:00.000Z`
   );
 
+  const existingAppointment = await prisma.appointment.findFirst({
+    where: {
+      doctorId: finalDoctorId,
+      scheduledAt,
+      status: { not: "CANCELLED" },
+    },
+    select: { id: true },
+  });
+
+  if (existingAppointment) {
+    throw new ApiError(409, "This slot is already booked. Please choose another slot.");
+  }
+
+  const resolvedPatientSymptoms =
+    Array.isArray(finalSymptoms) && finalSymptoms.length > 0
+      ? finalSymptoms.map((item) => String(item).trim()).filter(Boolean).join(", ")
+      : typeof finalSymptoms === "string" && finalSymptoms.trim().length > 0
+        ? finalSymptoms.trim()
+        : typeof problemDescription === "string" && problemDescription.trim().length > 0
+          ? problemDescription.trim()
+          : "Not provided";
+
   const appointment = await prisma.appointment.create({
     data: {
       patientId,
       doctorId: finalDoctorId,
       scheduledAt,
-      patientSymptoms: Array.isArray(finalSymptoms)
-        ? finalSymptoms.join(", ")
-        : finalSymptoms,
+      problemDescription:
+        typeof problemDescription === "string" && problemDescription.trim().length > 0
+          ? problemDescription.trim()
+          : null,
+      patientSymptoms: resolvedPatientSymptoms,
+      severity:
+        typeof severity === "string" && severity.trim().length > 0
+          ? severity.trim().toLowerCase()
+          : null,
+      duration:
+        typeof duration === "string" && duration.trim().length > 0
+          ? duration.trim()
+          : null,
       aiSummary: aiSummaryText,
     },
   });
@@ -278,7 +540,16 @@ export const getPatientAppointments = asyncHandler(async (req, res) => {
       doctor: {
         select: {
           name: true,
-          doctorProfile: { select: { specialty: true } },
+          doctorProfile: {
+            select: {
+              specialty: true,
+              department: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -288,6 +559,133 @@ export const getPatientAppointments = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, appointments, "Patient appointments fetched."));
 });
+
+export const reschedulePatientAppointment = asyncHandler(async (req, res) => {
+  const { appointmentId } = req.params;
+  const { patientId, date, time } = req.body;
+
+  if (!appointmentId || !patientId || !date || !time) {
+    throw new ApiError(400, "appointmentId, patientId, date and time are required.");
+  }
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, patientId },
+    select: { id: true, doctorId: true, status: true },
+  });
+
+  if (!appointment) {
+    throw new ApiError(404, "Appointment not found for this patient.");
+  }
+
+  if (appointment.status === "CANCELLED") {
+    throw new ApiError(400, "Cancelled appointment cannot be rescheduled.");
+  }
+
+  const normalizedTime = String(time).trim();
+  let hh = 0;
+  let mm = 0;
+
+  const time12hMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const time24hMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})$/);
+
+  if (time12hMatch) {
+    hh = Number(time12hMatch[1]);
+    mm = Number(time12hMatch[2]);
+    const period = time12hMatch[3].toUpperCase();
+    if (period === "PM" && hh < 12) hh += 12;
+    if (period === "AM" && hh === 12) hh = 0;
+  } else if (time24hMatch) {
+    hh = Number(time24hMatch[1]);
+    mm = Number(time24hMatch[2]);
+  } else {
+    throw new ApiError(400, "Invalid time format. Use HH:mm or HH:mm AM/PM.");
+  }
+
+  if (
+    Number.isNaN(hh) ||
+    Number.isNaN(mm) ||
+    hh < 0 ||
+    hh > 23 ||
+    mm < 0 ||
+    mm > 59
+  ) {
+    throw new ApiError(400, "Invalid time value.");
+  }
+
+  const scheduledAt = new Date(
+    `${date}T${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}:00.000Z`
+  );
+
+  if (Number.isNaN(scheduledAt.getTime())) {
+    throw new ApiError(400, "Invalid date/time provided.");
+  }
+
+  const conflict = await prisma.appointment.findFirst({
+    where: {
+      id: { not: appointment.id },
+      doctorId: appointment.doctorId,
+      scheduledAt,
+      status: { not: "CANCELLED" },
+    },
+    select: { id: true },
+  });
+
+  if (conflict) {
+    throw new ApiError(409, "Selected slot is already booked. Please choose another time.");
+  }
+
+  const updated = await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: {
+      scheduledAt,
+      status: "SCHEDULED",
+    },
+    select: {
+      id: true,
+      scheduledAt: true,
+      status: true,
+    },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updated, "Appointment rescheduled."));
+});
+
+export const cancelPatientAppointment = asyncHandler(async (req, res) => {
+  const { appointmentId } = req.params;
+  const { patientId } = req.body;
+
+  if (!appointmentId || !patientId) {
+    throw new ApiError(400, "appointmentId and patientId are required.");
+  }
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, patientId },
+    select: { id: true, status: true },
+  });
+
+  if (!appointment) {
+    throw new ApiError(404, "Appointment not found for this patient.");
+  }
+
+  if (appointment.status === "CANCELLED") {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { id: appointment.id }, "Appointment already cancelled."));
+  }
+
+  await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: { status: "CANCELLED" },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { id: appointment.id }, "Appointment cancelled."));
+});
+
+export const deletePatientAppointment = cancelPatientAppointment;
 
 // ==========================================
 // 7. FETCH PATIENT DASHBOARD DATA

@@ -22,7 +22,9 @@ import PatientReports from "./components/PatientReports";
 import PatientProfile from "./components/PatientProfile";
 import PatientSettings from "./components/PatientSettings";
 import PatientAppointments from "./components/PatientAppointments";
+import PatientAppointmentsMain from "./components/PatientAppointmentsMain";
 import DoctorDashboard from "./components/DoctorDashboard";
+import DoctorProfile from "./components/DoctorProfile";
 import AdminDashboard from "./components/AdminDashboard";
 import PrakritiFinalization from "./components/PrakritiFinalization";
 import WellnessCenterNetwork from "./components/WellnessCenterNetwork";
@@ -76,6 +78,12 @@ const PatientSettingsPage = () => (
 
 const PatientAppointmentsPage = () => (
   <AppLayout userType="patient">
+    <PatientAppointmentsMain />
+  </AppLayout>
+);
+
+const PatientAppointmentsBookingPage = () => (
+  <AppLayout userType="patient">
     <PatientAppointments />
   </AppLayout>
 );
@@ -83,6 +91,12 @@ const PatientAppointmentsPage = () => (
 const DoctorDashboardPage = () => (
   <DoctorAppLayout>
     <DoctorDashboard />
+  </DoctorAppLayout>
+);
+
+const DoctorProfilePage = () => (
+  <DoctorAppLayout>
+    <DoctorProfile />
   </DoctorAppLayout>
 );
 
@@ -170,11 +184,16 @@ function Router() {
       <Route path="/patient/profile" component={PatientProfilePage} />
       <Route path="/patient/settings" component={PatientSettingsPage} />
       <Route path="/patient/appointments" component={PatientAppointmentsPage} />
+      <Route path="/patient/appointments/new" component={PatientAppointmentsBookingPage} />
 
       {/* Doctor Routes */}
       <Route
         path="/doctor/dashboard"
         component={DoctorDashboardPage}
+      />
+      <Route
+        path="/doctor/profile"
+        component={DoctorProfilePage}
       />
       {/* <Route path="/Doctor/diet-chart" component={DietChartCreationPage} /> */}
       <Route

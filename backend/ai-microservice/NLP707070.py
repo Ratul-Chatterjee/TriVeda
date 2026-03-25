@@ -142,7 +142,7 @@ def determine_department(symptoms_text: str) -> tuple:
         (["cough", "mucus", "chest congestion", "difficulty breathing"], "d5", "Pulmonology", "Deals with respiratory issues."),
         
         
-        (["stomach", "burning sensation", "acid reflux", "nausea"], "d1", "Gastroenterology", "Deals with digestive disorders."),
+        (["stomach", "burning sensation", "acid reflux", "nausea", "vomiting", "puking", "belly pain", "stomach pain", "digestive"], "d1", "Gastroenterology", "Deals with digestive disorders."),
         
         
         (["morning stiffness", "multiple joints", "autoimmune"], "d9", "Rheumatology", "Deals with arthritis and autoimmune conditions."),

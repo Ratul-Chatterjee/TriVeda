@@ -100,3 +100,11 @@ export const useSavePrakritiAssessment = () => {
     },
   });
 };
+
+export const useLatestPrakritiAssessment = (patientId?: string) => {
+  return useQuery({
+    queryKey: ["prakritiAssessment", "latest", patientId],
+    queryFn: () => appointmentApi.getLatestPrakritiAssessment(patientId as string),
+    enabled: !!patientId,
+  });
+};

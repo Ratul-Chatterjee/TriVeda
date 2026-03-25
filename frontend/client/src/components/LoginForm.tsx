@@ -80,7 +80,7 @@ export default function LoginForm({ userType = "patient" }: LoginFormProps) {
           icon: Stethoscope,
           demoCredentials: {
             email: "akshat@cityhospital.com",
-            password: "Doc-232a59",
+            password: "planet29",
           },
         };
       case "admin":

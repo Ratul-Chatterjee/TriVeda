@@ -6,6 +6,16 @@ import ApiError from '../utils/ApiError.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
+const ALLOWED_STAFF_ROLES = [
+    "ADMIN",
+    "DOCTOR",
+    "RECEPTIONIST",
+    "PHARMACIST",
+    "NURSE",
+    "THERAPIST",
+    "BILLING",
+];
+
 const resolveHospitalIdFromRequest = async (req) => {
     const token = req.cookies?.triveda_auth;
     if (!token) return null;
@@ -39,11 +49,48 @@ export const getDepartments = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, departments, "Departments fetched successfully."));
 });
 
-export const createDoctor = asyncHandler(async (req, res) => {
-    const { name, email, specialization, departmentId, hospitalId } = req.body;
+export const checkStaffEmailAvailability = asyncHandler(async (req, res) => {
+    const emailRaw = req.query?.email;
+    const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : "";
 
-    if (!name || !email || !specialization || !departmentId) {
+    if (!email) {
+        throw new ApiError(400, "Email is required.");
+    }
+
+    const existingStaff = await prisma.hospitalStaff.findFirst({
+        where: {
+            email: {
+                equals: email,
+                mode: "insensitive",
+            },
+        },
+        select: { id: true },
+    });
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            { email, exists: !!existingStaff },
+            existingStaff ? "Email is already in use." : "Email is available."
+        )
+    );
+});
+
+export const createStaff = asyncHandler(async (req, res) => {
+    const { name, email, specialization, departmentId, hospitalId, role = "DOCTOR" } = req.body;
+    const normalizedRole = String(role || "DOCTOR").trim().toUpperCase();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    if (!name || !normalizedEmail || !normalizedRole) {
         throw new ApiError(400, "Missing required fields.");
+    }
+
+    if (!ALLOWED_STAFF_ROLES.includes(normalizedRole)) {
+        throw new ApiError(400, "Invalid staff role selected.");
+    }
+
+    if (normalizedRole === "DOCTOR" && (!specialization || !departmentId)) {
+        throw new ApiError(400, "Specialization and department are required for doctor role.");
     }
 
     let finalHospitalId = hospitalId;
@@ -77,7 +124,14 @@ export const createDoctor = asyncHandler(async (req, res) => {
     }
 
     // 1. Check if email exists
-    const existingStaff = await prisma.hospitalStaff.findUnique({ where: { email } });
+    const existingStaff = await prisma.hospitalStaff.findFirst({
+        where: {
+            email: {
+                equals: normalizedEmail,
+                mode: "insensitive",
+            },
+        },
+    });
     if (existingStaff) throw new ApiError(400, "Email is already registered.");
 
     // 2. Auto-Generate the Password (e.g. Doc-4f8a2b)
@@ -87,40 +141,46 @@ export const createDoctor = asyncHandler(async (req, res) => {
     // Hash it before saving to the database
     const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
-    // 3. Use the departmentId provided from the frontend
-    let finalDepartmentId = departmentId;
-    
-    // If departmentId is provided, verify it exists
-    if (departmentId) {
-        const department = await prisma.department.findUnique({ where: { id: departmentId } });
-        if (!department) {
-            throw new ApiError(404, "Department not found.");
+    let finalDepartmentId = null;
+
+    if (normalizedRole === "DOCTOR") {
+        finalDepartmentId = departmentId;
+
+        if (departmentId) {
+            const department = await prisma.department.findUnique({ where: { id: departmentId } });
+            if (!department) {
+                throw new ApiError(404, "Department not found.");
+            }
         }
     }
 
-    // 4. Create the Doctor in a single transaction
-    const newDoctor = await prisma.hospitalStaff.create({
-        data: {
-            name, 
-            email, 
-            password: hashedPassword, 
-            role: "DOCTOR", 
-            hospitalId: finalHospitalId,
-            doctorProfile: {
-                create: { 
-                    specialty: specialization, 
-                    departmentId: finalDepartmentId || null,
-                    experienceYrs: 0 // Default skipped value
-                }
-            }
-        }
+    const createData = {
+        name,
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: normalizedRole,
+        hospitalId: finalHospitalId,
+    };
+
+    if (normalizedRole === "DOCTOR") {
+        createData.doctorProfile = {
+            create: {
+                specialty: specialization,
+                departmentId: finalDepartmentId,
+                experienceYrs: 0,
+            },
+        };
+    }
+
+    const newStaff = await prisma.hospitalStaff.create({
+        data: createData,
     });
 
-    // 5. Send the RAW generated password back in the response so the Admin UI can display it
     return res.status(201).json(new ApiResponse(201, { 
-        doctorId: newDoctor.id,
+        staffId: newStaff.id,
+        role: normalizedRole,
         temporaryPassword: generatedPassword 
-    }, "Doctor added successfully."));
+    }, `${normalizedRole} added successfully.`));
 });
 
 export const getDoctors = asyncHandler(async (req, res) => {

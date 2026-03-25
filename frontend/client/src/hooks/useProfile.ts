@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { profileApi } from '@/api/profile.api';
+import { profileApi, type UpdateDoctorProfilePayload } from '@/api/profile.api';
 
 export const usePatientProfile = (id?: string, email?: string) => {
   return useQuery({
@@ -39,6 +39,19 @@ export const useUploadPatientReport = () => {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['patientProfile', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['patientProfile'] });
+    },
+  });
+};
+
+export const useUpdateDoctorProfile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpdateDoctorProfilePayload) =>
+      profileApi.updateDoctorProfile(payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['doctorProfile', variables.staffId] });
+      queryClient.invalidateQueries({ queryKey: ['doctorProfile'] });
     },
   });
 };

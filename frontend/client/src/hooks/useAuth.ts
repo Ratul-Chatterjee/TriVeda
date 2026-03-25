@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { authApi } from '../api/auth.api';
+import { authApi, type ChangePasswordPayload } from '../api/auth.api';
 import { useLocation } from 'wouter';
 import { useToast } from './use-toast';
 import useNavigate from '@/lib/navigate';
@@ -63,5 +63,11 @@ export const usePatientRegister = () => {
                 variant: "destructive",
             });
         },
+    });
+};
+
+export const useChangePassword = () => {
+    return useMutation({
+        mutationFn: (payload: ChangePasswordPayload) => authApi.changePassword(payload),
     });
 };
