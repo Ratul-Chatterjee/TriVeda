@@ -444,6 +444,13 @@ export default function DoctorDashboard({
   const [activeExerciseSlotId, setActiveExerciseSlotId] = useState<string | null>(null);
   const [therapyFlowText, setTherapyFlowText] = useState("");
   const [testsFlowText, setTestsFlowText] = useState("");
+  const [dietQuickSearch, setDietQuickSearch] = useState("");
+  const [dietQuickPortion, setDietQuickPortion] = useState("");
+  const [asanaQuickSearch, setAsanaQuickSearch] = useState("");
+  const [exerciseDraftInputs, setExerciseDraftInputs] = useState<
+    Record<string, { duration: string; timing: string }>
+  >({});
+  const [medicineSearch, setMedicineSearch] = useState("");
 
   // Seasonal Guidelines Modal State
   const [showGuidelineModal, setShowGuidelineModal] = useState(false);
@@ -490,6 +497,11 @@ export default function DoctorDashboard({
       location: patient?.location || "-",
       issues: Array.isArray(patient?.issues) ? patient.issues : [],
       medications: Array.isArray(patient?.medications) ? patient.medications : [],
+      allergies: Array.isArray(patient?.allergies)
+        ? patient.allergies
+        : typeof patient?.allergies === "string" && patient.allergies.trim() && patient.allergies !== "-"
+        ? [patient.allergies]
+        : [],
       vitalSigns: patient?.vitalSigns || { bp: "-", pulse: 0, weight: "-", temp: "-" },
       phone: patient?.phone || "-",
       email: patient?.email || "-",
@@ -1083,6 +1095,113 @@ export default function DoctorDashboard({
     return findings;
   })();
 
+  const compileRoutinePlanFromSlots = (slots: ExerciseSlot[]) =>
+    slots
+      .map((slot) => {
+        const selectedExercise = exerciseCatalog.find(
+          (exercise) => exercise.id === slot.exerciseId
+        );
+        return selectedExercise
+          ? `${slot.timing} - ${selectedExercise.name} (${slot.duration || "duration not set"})`
+          : null;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+  const filteredDietOptions = mockFoodDatabase.filter((food) =>
+    food.name.toLowerCase().includes(dietQuickSearch.toLowerCase())
+  );
+
+  const filteredExerciseOptions = exerciseCatalog.filter((exercise) =>
+    exercise.name.toLowerCase().includes(asanaQuickSearch.toLowerCase())
+  );
+
+  const filteredRemedies = remedyCatalog.filter((remedy) =>
+    remedy.medicineName.toLowerCase().includes(medicineSearch.toLowerCase())
+  );
+
+  const addDietItemQuick = (food: (typeof mockFoodDatabase)[number]) => {
+    const withPortion = dietQuickPortion.trim()
+      ? `${food.name} (${dietQuickPortion.trim()})`
+      : food.name;
+
+    setDietChartItems((previousItems) =>
+      previousItems.trim().length > 0
+        ? `${previousItems}\n${withPortion}`
+        : withPortion
+    );
+    setDietQuickPortion("");
+  };
+
+  const addExerciseSlotQuick = (exerciseId: string) => {
+    const draft = exerciseDraftInputs[exerciseId] || { duration: "", timing: "" };
+    const nextSlot: ExerciseSlot = {
+      id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      exerciseId,
+      timing: draft.timing.trim(),
+      duration: draft.duration.trim(),
+      doctorNotes: "",
+      importantDetails: "",
+    };
+
+    if (!nextSlot.timing) return;
+
+    setExerciseSlots((previousSlots) => {
+      const nextSlots = [...previousSlots, nextSlot];
+      setRoutinePlan(compileRoutinePlanFromSlots(nextSlots));
+      return nextSlots;
+    });
+  };
+
+  const removeExerciseSlotQuick = (slotId: string) => {
+    setExerciseSlots((previousSlots) => {
+      const nextSlots = previousSlots.filter((slot) => slot.id !== slotId);
+      setRoutinePlan(compileRoutinePlanFromSlots(nextSlots));
+      return nextSlots;
+    });
+  };
+
+  const addMedicationSlotQuick = (remedyId: string) => {
+    const selectedRemedy = remedyCatalog.find((item) => item.id === remedyId);
+    if (!selectedRemedy) return;
+
+    const nextSlot: MedicationSlot = {
+      id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      remedyId,
+      timing: "",
+      dosage: "",
+      doctorNotes: "",
+      importantDetails: "",
+    };
+
+    setMedicationSlots((previousSlots) => [...previousSlots, nextSlot]);
+    setMedicationName(selectedRemedy.medicineName);
+    setMedicineSearch("");
+  };
+
+  const updateMedicationSlotQuick = (
+    slotId: string,
+    key: keyof MedicationSlot,
+    value: string
+  ) => {
+    setMedicationSlots((previousSlots) =>
+      previousSlots.map((slot) =>
+        slot.id === slotId
+          ? {
+              ...slot,
+              [key]: value,
+            }
+          : slot
+      )
+    );
+  };
+
+  const removeMedicationSlotQuick = (slotId: string) => {
+    setMedicationSlots((previousSlots) =>
+      previousSlots.filter((slot) => slot.id !== slotId)
+    );
+  };
+
   const latestAssessmentPayload: any =
     (latestPrakritiAssessmentData as any)?.data || latestPrakritiAssessmentData || null;
 
@@ -1231,6 +1350,7 @@ export default function DoctorDashboard({
         priority: "low",
         avatar: null,
         vitalSigns: { bp: "-", pulse: 0, weight: "-", temp: "-" },
+        allergies: [],
         medications: [],
         riskScore: 1,
         starred: false,
@@ -1290,8 +1410,8 @@ export default function DoctorDashboard({
     }
 
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden p-3 sm:p-6 lg:p-7 max-w-[1500px] mx-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 mb-8">
           <div className="flex items-start sm:items-center space-x-4 min-w-0">
             <div className="w-20 h-20 bg-gradient-to-br from-[#1F5C3F] to-[#10B981] rounded-full flex items-center justify-center text-white text-2xl font-semibold">
               {selectedPatient.name[0]}
@@ -1300,7 +1420,7 @@ export default function DoctorDashboard({
               <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 break-words">
                 {selectedPatient.name}
               </h2>
-              <div className="flex flex-wrap gap-2 mt-2">
+              <div className="flex flex-wrap gap-3 mt-3">
                 <span className="px-3 py-1 bg-emerald-100 text-[#1F5C3F] rounded-full text-sm font-medium">
                   {selectedPatient.prakriti}
                 </span>
@@ -1318,23 +1438,16 @@ export default function DoctorDashboard({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
-            <button className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto">
+          <div className="flex flex-wrap gap-3 sm:gap-3 w-full sm:w-auto sm:justify-end">
+            <button className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto">
               <Video className="w-4 h-4" />
               <span>Video Call</span>
             </button>
-            <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto">
+            <button className="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto">
               <MessageCircle className="w-4 h-4" />
               <span>Message</span>
             </button>
-            <button
-              onClick={() => handleCreateDietChart(selectedPatient.id)}
-              className="border border-emerald-300 hover:bg-emerald-50 text-[#1F5C3F] px-4 py-2 rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Create Diet Chart</span>
-            </button>
-                <span className={`px-3 py-2 rounded-lg text-xs font-semibold ${
+            <span className={`px-3 py-2.5 rounded-lg text-xs font-semibold inline-flex items-center justify-center ${
                   profileMode === "consult" ? "bg-[#1F5C3F] text-white" : "bg-gray-100 text-gray-700"
                 }`}>
                   {profileMode === "consult" ? "Consultation Mode" : "View Mode"}
@@ -1342,14 +1455,14 @@ export default function DoctorDashboard({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-7 xl:gap-7 items-start">
+          <div className="space-y-7 xl:col-span-4 2xl:col-span-3 self-start">
             <div className="bg-gray-50 rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 <User className="w-5 h-5 mr-2 text-[#1F5C3F]" />
                 Patient Information
               </h3>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <Mail className="w-4 h-4 text-gray-400" />
                   <span className="text-sm">{selectedPatient.email}</span>
@@ -1373,78 +1486,74 @@ export default function DoctorDashboard({
               </div>
             </div>
 
-            <div className="bg-red-50 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Monitor className="w-5 h-5 mr-2 text-red-600" />
-                Vital Signs
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-xl font-bold text-gray-900">
-                    {selectedPatient.vitalSigns.bp}
-                  </div>
-                  <div className="text-xs text-gray-600">Blood Pressure</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-5">
+              <div className="bg-gradient-to-br from-red-50 to-white rounded-xl p-5 border border-red-200 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-base font-semibold flex items-center">
+                    <span className="w-7 h-7 rounded-lg bg-red-100 text-red-700 flex items-center justify-center mr-2">
+                      <Monitor className="w-4 h-4" />
+                    </span>
+                    Vital Signs
+                  </h3>
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                    4 metrics
+                  </span>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-xl font-bold text-gray-900">
-                    {selectedPatient.vitalSigns.pulse}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 bg-white rounded-lg border border-red-100">
+                    <div className="text-lg font-bold text-gray-900">{selectedPatient.vitalSigns.bp || "-"}</div>
+                    <div className="text-[11px] text-gray-600">Blood Pressure</div>
                   </div>
-                  <div className="text-xs text-gray-600">Pulse (bpm)</div>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-xl font-bold text-gray-900">
-                    {selectedPatient.vitalSigns.weight}
+                  <div className="text-center p-3 bg-white rounded-lg border border-red-100">
+                    <div className="text-lg font-bold text-gray-900">{selectedPatient.vitalSigns.pulse || "-"}</div>
+                    <div className="text-[11px] text-gray-600">Pulse</div>
                   </div>
-                  <div className="text-xs text-gray-600">Weight</div>
-                </div>
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-xl font-bold text-gray-900">
-                    {selectedPatient.vitalSigns.temp}
+                  <div className="text-center p-3 bg-white rounded-lg border border-red-100">
+                    <div className="text-lg font-bold text-gray-900">{selectedPatient.vitalSigns.weight || "-"}</div>
+                    <div className="text-[11px] text-gray-600">Weight</div>
                   </div>
-                  <div className="text-xs text-gray-600">Temperature</div>
+                  <div className="text-center p-3 bg-white rounded-lg border border-red-100">
+                    <div className="text-lg font-bold text-gray-900">{selectedPatient.vitalSigns.temp || "-"}</div>
+                    <div className="text-[11px] text-gray-600">Temp</div>
+                  </div>
                 </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-amber-50 to-white rounded-xl p-5 border border-amber-200 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-base font-semibold flex items-center">
+                    <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center mr-2">
+                      <AlertTriangle className="w-4 h-4" />
+                    </span>
+                    Allergies
+                  </h3>
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                    {Array.isArray(selectedPatient.allergies) ? selectedPatient.allergies.length : 0} reported
+                  </span>
+                </div>
+                {Array.isArray(selectedPatient.allergies) && selectedPatient.allergies.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPatient.allergies.map((allergy: string, index: number) => (
+                      <span
+                        key={`${allergy}-${index}`}
+                        className="px-2.5 py-1 rounded-full text-xs bg-white border border-amber-200 text-amber-800"
+                      >
+                        {allergy}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-white border border-amber-100 rounded-lg px-3 py-2">
+                    <p className="text-sm text-amber-800/80">No known allergies</p>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="bg-yellow-50 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Shield className="w-5 h-5 mr-2 text-yellow-600" />
-                Risk Assessment
-              </h3>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-gray-600">Risk Score</span>
-                <span
-                  className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    selectedPatient.riskScore >= 4
-                      ? "bg-red-100 text-red-800"
-                      : selectedPatient.riskScore >= 3
-                      ? "bg-yellow-100 text-yellow-800"
-                      : "bg-green-100 text-green-800"
-                  }`}
-                >
-                  {selectedPatient.riskScore}/5
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div
-                  className={`h-3 rounded-full ${
-                    selectedPatient.riskScore >= 4
-                      ? "bg-red-500"
-                      : selectedPatient.riskScore >= 3
-                      ? "bg-yellow-500"
-                      : "bg-green-500"
-                  }`}
-                  style={{ width: `${(selectedPatient.riskScore / 5) * 100}%` }}
-                ></div>
-              </div>
-              <p className="text-xs text-gray-600 mt-2">
-                Based on current health conditions and compliance history
-              </p>
-            </div>
           </div>
 
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="xl:col-span-8 2xl:col-span-9 space-y-7">
+            <div className="bg-white border border-gray-200 rounded-2xl p-3 sm:p-5 md:p-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 <Stethoscope className="w-5 h-5 mr-2 text-[#1F5C3F]" />
                 Health Issues & Treatment
@@ -1472,7 +1581,7 @@ export default function DoctorDashboard({
                   {selectedPatient.medications.map((med: string, idx: number) => (
                     <div
                       key={idx}
-                      className="flex items-center space-x-3 p-3 bg-emerald-50 rounded-lg"
+                      className="flex items-center space-x-3 p-4 bg-emerald-50 rounded-lg"
                     >
                       <div className="w-10 h-10 bg-emerald-200 rounded-full flex items-center justify-center">
                         <Pill className="w-5 h-5 text-[#1F5C3F]" />
@@ -1507,78 +1616,507 @@ export default function DoctorDashboard({
               </div>
 
               {profileMode === "consult" ? (
-                <div className="space-y-4 mt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <button
-                      onClick={() => handleCreateDietChart(selectedPatient.id)}
-                      className="border border-[#1F5C3F]/30 bg-emerald-50 hover:bg-emerald-100 text-[#1F5C3F] px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Create Diet Chart Flow</span>
-                      <FileText className="w-4 h-4" />
-                    </button>
+                <div className="mt-6 grid grid-cols-1 2xl:grid-cols-12 gap-5 sm:gap-6">
+                  {/* Diet Flow Interface - Step-based */}
+                  <div className="bg-white border border-gray-200 rounded-2xl p-3 sm:p-5 md:p-6 2xl:col-span-8 w-full">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <h4 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <Utensils className="w-5 h-5 text-emerald-600" />
+                        Create Diet Chart
+                      </h4>
+                      <span className="text-xs font-medium bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+                        Step {dietFlowStep} of 4
+                      </span>
+                    </div>
 
-                    <button
-                      onClick={() => openFieldFlowModal("medications")}
-                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Current Medications / Remedies</span>
-                      <Pill className="w-4 h-4" />
-                    </button>
+                    {/* Step Indicator */}
+                    <div className="flex flex-wrap items-center gap-2 mb-5 sm:mb-6">
+                      {[
+                        { step: 1, title: "Food Selection", icon: Utensils },
+                        { step: 2, title: "Meal Planning", icon: Clock },
+                        { step: 3, title: "Recommendations", icon: BookOpen },
+                        { step: 4, title: "Review & Publish", icon: CheckCircle },
+                      ].map(({ step, title, icon: Icon }) => (
+                        <div key={step} className="flex items-center space-x-1.5">
+                          <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold ${
+                            dietFlowStep === step
+                              ? "bg-emerald-600 text-white"
+                              : dietFlowStep > step
+                              ? "bg-green-600 text-white"
+                              : "bg-gray-200 text-gray-600"
+                          }`}>
+                            {dietFlowStep > step ? <CheckCircle className="h-4 w-4" /> : step}
+                          </div>
+                          <span className={`text-xs font-medium whitespace-nowrap ${
+                            dietFlowStep === step
+                              ? "text-emerald-600"
+                              : dietFlowStep > step
+                              ? "text-green-600"
+                              : "text-gray-500"
+                          }`}>
+                            {title}
+                          </span>
+                          {step < 4 && <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />}
+                        </div>
+                      ))}
+                    </div>
 
-                    <button
-                      onClick={() => openFieldFlowModal("asanas")}
-                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Asanas / Exercises Flow</span>
-                      <Activity className="w-4 h-4" />
-                    </button>
+                    {/* Diet Flow Content - Steps */}
+                    {dietFlowStep === 1 && (
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-gray-900">Select Foods for Meals</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-gray-100 p-1.5 rounded-lg">
+                          {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, index) => (
+                            <button
+                              key={meal}
+                              onClick={() => setDietFlowSelectedMealIdx(index)}
+                              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition ${
+                                dietFlowSelectedMealIdx === index 
+                                  ? "bg-white shadow-sm text-gray-900" 
+                                  : "text-gray-600 hover:text-gray-900"
+                              }`}
+                            >
+                              {meal}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                          placeholder="Search foods by name, category, or properties..."
+                          value={dietFlowSearch}
+                          onChange={(event) => setDietFlowSearch(event.target.value)}
+                        />
+                        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-3">Available Foods</h4>
+                            <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto space-y-2">
+                              {mockFoodDatabase
+                                .filter((food) =>
+                                  food.name.toLowerCase().includes(dietFlowSearch.toLowerCase()) ||
+                                  food.category.toLowerCase().includes(dietFlowSearch.toLowerCase())
+                                )
+                                .map((food) => (
+                                  <div key={food.id} className="bg-white rounded-lg p-3 border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div>
+                                        <h5 className="font-medium text-gray-900">{food.name}</h5>
+                                        <div className="text-xs text-gray-600">{food.category} • {food.calories} kcal</div>
+                                      </div>
+                                      <button
+                                        onClick={() => handleDietFlowAddFood(food)}
+                                        className="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded transition"
+                                      >
+                                        Add
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs">
+                                      <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-700">{food.rasa}</span>
+                                      <span className="px-2 py-1 rounded bg-green-100 text-green-700">{food.dosha}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-3">Selected for {dietFlowChart.meals[dietFlowSelectedMealIdx]?.meal}</h4>
+                            <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-medium text-emerald-900">Total Calories</span>
+                                <span className="text-lg font-bold text-emerald-600">{dietFlowChart.meals[dietFlowSelectedMealIdx]?.calories || 0} kcal</span>
+                              </div>
+                              {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).length === 0 ? (
+                                <div className="text-center py-8 text-gray-500">
+                                  <Utensils className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                  <p className="text-sm">No foods selected yet</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).map((food: string, index: number) => (
+                                    <div key={`${food}-${index}`} className="flex items-center justify-between bg-white rounded-lg p-3 border border-emerald-200">
+                                      <span className="font-medium text-gray-900 text-sm">{food}</span>
+                                      <button
+                                        onClick={() => handleDietFlowRemoveFood(index)}
+                                        className="px-3 py-1 text-xs border border-red-300 text-red-700 hover:bg-red-50 rounded transition"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-4 border-t">
+                          <button
+                            onClick={() => setDietFlowStep(2)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition"
+                          >
+                            Next: Meal Planning <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    <button
-                      onClick={() => openFieldFlowModal("therapy")}
-                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Therapy Flow</span>
-                      <Heart className="w-4 h-4" />
-                    </button>
+                    {dietFlowStep === 2 && (
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-gray-900">Add Therapeutic Rationale</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-gray-100 p-1.5 rounded-lg mb-4">
+                          {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, index) => (
+                            <button
+                              key={meal}
+                              onClick={() => setDietFlowSelectedMealIdx(index)}
+                              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition ${
+                                dietFlowSelectedMealIdx === index 
+                                  ? "bg-white shadow-sm text-gray-900" 
+                                  : "text-gray-600"
+                              }`}
+                            >
+                              {meal} ({dietFlowChart.meals[index]?.foods?.length || 0})
+                            </button>
+                          ))}
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                          <h4 className="font-medium text-gray-900 mb-2">{dietFlowChart.meals[dietFlowSelectedMealIdx]?.meal} - {dietFlowChart.meals[dietFlowSelectedMealIdx]?.time}</h4>
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {(dietFlowChart.meals[dietFlowSelectedMealIdx]?.foods || []).map((food: string, index: number) => (
+                              <span key={`${food}-${index}`} className="px-2 py-1 rounded bg-emerald-100 text-emerald-700 text-xs">{food}</span>
+                            ))}
+                          </div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Therapeutic Rationale</label>
+                          <Textarea
+                            value={dietFlowChart.meals[dietFlowSelectedMealIdx]?.rationale || ""}
+                            onChange={(event) => handleDietFlowRationale(event.target.value)}
+                            rows={4}
+                            className="border-gray-300"
+                            placeholder="Explain the therapeutic benefits of this meal combination..."
+                          />
+                        </div>
+                        <div className="flex justify-between gap-3 pt-4 border-t">
+                          <button
+                            onClick={() => setDietFlowStep(1)}
+                            className="border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm transition"
+                          >
+                            Back
+                          </button>
+                          <button
+                            onClick={() => setDietFlowStep(3)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition"
+                          >
+                            Next: Recommendations <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    <button
-                      onClick={() => openFieldFlowModal("tests")}
-                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Tests Flow</span>
-                      <FileText className="w-4 h-4" />
-                    </button>
+                    {dietFlowStep === 3 && (
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-gray-900">General Lifestyle Recommendations</h3>
+                        <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Dietary and Lifestyle Guidelines</label>
+                          <Textarea
+                            value={dietFlowChart.recommendations.join("\n")}
+                            onChange={(event) => handleDietFlowRecommendations(event.target.value)}
+                            rows={8}
+                            className="border-gray-300"
+                            placeholder="Enter personalized recommendations, one per line"
+                          />
+                        </div>
+                        <div className="flex justify-between gap-3 pt-4 border-t">
+                          <button
+                            onClick={() => setDietFlowStep(2)}
+                            className="border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm transition"
+                          >
+                            Back
+                          </button>
+                          <button
+                            onClick={() => setDietFlowStep(4)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition"
+                          >
+                            Review & Publish <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    <button
-                      onClick={() => openFieldFlowModal("notes")}
-                      className="border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg text-sm font-semibold flex items-center justify-between"
-                    >
-                      <span>Doctor Notes Flow</span>
-                      <Edit className="w-4 h-4" />
-                    </button>
+                    {dietFlowStep === 4 && (
+                      <div className="space-y-4">
+                        <h3 className="font-semibold text-gray-900">Review Diet Chart</h3>
+                        <div className="bg-gray-50 rounded-lg p-6 space-y-6 border border-gray-200">
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <h4 className="font-semibold text-gray-900 mb-3">Patient Information</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                              <div><span className="text-gray-600">Name:</span> <span className="ml-2 font-medium">{dietFlowChart.patientName}</span></div>
+                              <div><span className="text-gray-600">Constitution:</span> <span className="ml-2 px-2 py-1 rounded bg-emerald-100 text-emerald-700 text-xs font-medium">{dietFlowChart.prakriti}</span></div>
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <h4 className="font-semibold text-gray-900 mb-3">Daily Meal Plan</h4>
+                            <div className="space-y-3">
+                              {dietFlowChart.meals.map((meal: any, index: number) => (
+                                <div key={index} className="border border-gray-200 rounded-lg p-3">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h5 className="font-medium text-gray-900">{meal.meal}</h5>
+                                    <div className="text-sm text-gray-600">{meal.time} • {meal.calories} kcal</div>
+                                  </div>
+                                  <div className="text-sm text-gray-700"><span className="text-gray-600">Foods: </span>{meal.foods.join(", ") || "None selected"}</div>
+                                  {meal.rationale && <div className="text-sm text-gray-700 italic bg-gray-50 p-2 rounded mt-2">{meal.rationale}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <h4 className="font-semibold text-gray-900 mb-3">Lifestyle Recommendations</h4>
+                            {dietFlowChart.recommendations.length > 0 ? (
+                              <ul className="space-y-1 text-sm text-gray-700">
+                                {dietFlowChart.recommendations.map((rec: string, index: number) => (
+                                  <li key={index} className="flex items-start gap-2">
+                                    <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+                                    {rec}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-gray-500">No recommendations added</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between gap-3 pt-4 border-t">
+                          <button
+                            onClick={() => setDietFlowStep(3)}
+                            className="border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm transition"
+                          >
+                            Back
+                          </button>
+                          <button
+                            onClick={handleDietFlowPublish}
+                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition"
+                          >
+                            <CheckCircle className="h-4 w-4" /> Publish Diet Chart
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-                    <p><span className="font-medium text-gray-800">Diet Chart:</span> {dietChartItems ? "Configured" : "Not configured"}</p>
-                    <p><span className="font-medium text-gray-800">Medications:</span> {medicationSlots.length > 0 || medicationName || medicationProperties ? "Configured" : "Not configured"}</p>
-                    <p><span className="font-medium text-gray-800">Asanas/Exercises:</span> {exerciseSlots.length > 0 || routinePlan ? "Configured" : "Not configured"}</p>
-                    <p><span className="font-medium text-gray-800">Therapy:</span> {therapyFlowText ? "Configured" : "Not configured"}</p>
-                    <p><span className="font-medium text-gray-800">Tests:</span> {testsFlowText ? "Configured" : "Not configured"}</p>
+                  {/* E-commerce Style Consultation Cards */}
+                  <div className="bg-white border border-gray-200 rounded-2xl p-3 sm:p-5 md:p-6 2xl:col-span-4 h-full w-full">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Quick Add Consultations</h4>
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* Yoga & Asanas Card */}
+                    <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-3 sm:p-4 shadow-sm hover:shadow-md transition">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="p-2 rounded-lg bg-sky-100">
+                          <Activity className="w-5 h-5 text-sky-700" />
+                        </div>
+                        <h5 className="text-base font-semibold text-sky-900">Yoga & Asanas</h5>
+                      </div>
+                      <input
+                        value={asanaQuickSearch}
+                        onChange={(event) => setAsanaQuickSearch(event.target.value)}
+                        placeholder="Search asana"
+                        className="w-full mb-3 px-3 py-2 text-sm border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400"
+                      />
+                      <div className="flex-1 space-y-2 max-h-64 overflow-y-auto">
+                        {filteredExerciseOptions.slice(0, 6).map((exercise) => {
+                          const draftInput = exerciseDraftInputs[exercise.id] || { duration: "", timing: "" };
+                          return (
+                            <div key={exercise.id} className="bg-white border border-sky-100 rounded-lg p-3 hover:border-sky-300 transition">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-6 h-6 rounded bg-sky-100 text-sky-700 flex items-center justify-center flex-shrink-0">
+                                  <Activity className="w-3 h-3" />
+                                </div>
+                                <p className="text-sm font-medium text-gray-900">{exercise.name}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 mb-2">
+                                <input
+                                  value={draftInput.duration}
+                                  onChange={(event) =>
+                                    setExerciseDraftInputs((prev) => ({
+                                      ...prev,
+                                      [exercise.id]: {
+                                        ...draftInput,
+                                        duration: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Duration"
+                                  className="px-2 py-1.5 text-xs border border-sky-200 rounded"
+                                />
+                                <input
+                                  value={draftInput.timing}
+                                  onChange={(event) =>
+                                    setExerciseDraftInputs((prev) => ({
+                                      ...prev,
+                                      [exercise.id]: {
+                                        ...draftInput,
+                                        timing: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Timing"
+                                  className="px-2 py-1.5 text-xs border border-sky-200 rounded"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addExerciseSlotQuick(exercise.id)}
+                                className="w-full text-xs bg-sky-700 hover:bg-sky-800 text-white py-1.5 rounded transition"
+                              >
+                                Add Asana
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Remedies & Medicines Card */}
+                    <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-3 sm:p-4 shadow-sm hover:shadow-md transition">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="p-2 rounded-lg bg-amber-100">
+                          <Pill className="w-5 h-5 text-amber-700" />
+                        </div>
+                        <h5 className="text-base font-semibold text-amber-900">Remedies & Medicines</h5>
+                      </div>
+                      <input
+                        value={medicineSearch}
+                        onChange={(event) => setMedicineSearch(event.target.value)}
+                        placeholder="Search medicine"
+                        className="w-full mb-3 px-3 py-2 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                      <div className="flex-1 space-y-2 max-h-64 overflow-y-auto">
+                        {filteredRemedies.slice(0, 6).map((remedy) => (
+                          <div key={remedy.id} className="bg-white border border-amber-100 rounded-lg p-3 flex items-center justify-between gap-2 hover:border-amber-300 transition">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{remedy.medicineName}</p>
+                              <p className="text-xs text-gray-500">{remedy.medicineType}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => addMedicationSlotQuick(remedy.id)}
+                              className="shrink-0 whitespace-nowrap text-[11px] bg-amber-700 hover:bg-amber-800 text-white px-2 py-1.5 rounded transition"
+                            >
+                              Add Rx
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+
+                  {/* Selected Items Summary Cards */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 2xl:col-span-6">
+                    <div className="bg-white border border-sky-200 rounded-2xl p-5 min-h-[220px] flex flex-col">
+                      <h5 className="text-base font-semibold text-sky-900 mb-3 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Selected Asanas
+                      </h5>
+                      {exerciseSlots.length === 0 ? (
+                        <p className="text-xs text-gray-500">No asana selected yet.</p>
+                      ) : (
+                        <div className="space-y-2 flex-1 overflow-y-auto">
+                          {exerciseSlots.map((slot) => {
+                            const exercise = exerciseCatalog.find((item) => item.id === slot.exerciseId);
+                            return (
+                              <div key={slot.id} className="flex items-center justify-between bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 hover:bg-sky-100 transition">
+                                <p className="text-xs font-medium text-sky-900 pr-2 break-words">
+                                  {exercise?.name || "Asana"} • {slot.duration || "—"} • {slot.timing || "—"}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => removeExerciseSlotQuick(slot.id)}
+                                  className="text-red-600 hover:text-red-700 shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white border border-amber-200 rounded-2xl p-5 min-h-[220px] flex flex-col">
+                      <h5 className="text-base font-semibold text-amber-900 mb-3 flex items-center gap-2">
+                        <Pill className="w-4 h-4" />
+                        Selected Prescriptions
+                      </h5>
+                      {medicationSlots.length === 0 ? (
+                        <p className="text-xs text-gray-500">No medicine selected yet.</p>
+                      ) : (
+                        <div className="space-y-3 flex-1 overflow-y-auto max-h-72 pr-1">
+                          {medicationSlots.map((slot) => {
+                            const remedy = remedyCatalog.find((item) => item.id === slot.remedyId);
+                            return (
+                              <div key={slot.id} className="bg-amber-50 border border-amber-100 rounded-lg p-3 space-y-2 hover:bg-amber-100 transition">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium text-amber-900">{remedy?.medicineName || "Medicine"}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeMedicationSlotQuick(slot.id)}
+                                    className="text-red-600 hover:text-red-700 shrink-0"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                  <input
+                                    value={slot.dosage}
+                                    onChange={(event) => updateMedicationSlotQuick(slot.id, "dosage", event.target.value)}
+                                    placeholder="Dosage"
+                                    className="px-2.5 py-1.5 border border-amber-200 rounded-md"
+                                  />
+                                  <input
+                                    value={slot.doctorNotes}
+                                    onChange={(event) => updateMedicationSlotQuick(slot.id, "doctorNotes", event.target.value)}
+                                    placeholder="Frequency"
+                                    className="px-2.5 py-1.5 border border-amber-200 rounded-md"
+                                  />
+                                  <input
+                                    value={slot.timing}
+                                    onChange={(event) => updateMedicationSlotQuick(slot.id, "timing", event.target.value)}
+                                    placeholder="Timing"
+                                    className="px-2.5 py-1.5 border border-amber-200 rounded-md"
+                                  />
+                                  <input
+                                    value={slot.importantDetails}
+                                    onChange={(event) => updateMedicationSlotQuick(slot.id, "importantDetails", event.target.value)}
+                                    placeholder="Details"
+                                    className="px-2.5 py-1.5 border border-amber-200 rounded-md"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Treatment Summary and Save */}
+                  <div className="bg-white border border-gray-200 rounded-2xl p-5 md:p-6 2xl:col-span-6 space-y-5">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-800 space-y-1">
+                    <p className="font-semibold mb-2">Treatment Configuration Summary:</p>
+                    <p><span className="font-medium">Diet Chart:</span> {dietFlowChart.meals.some(m => m.foods.length > 0) ? "✓ Configured" : "○ Not configured"}</p>
+                    <p><span className="font-medium">Asanas:</span> {exerciseSlots.length > 0 ? `✓ ${exerciseSlots.length} selected` : "○ Not configured"}</p>
+                    <p><span className="font-medium">Medicines:</span> {medicationSlots.length > 0 ? `✓ ${medicationSlots.length} selected` : "○ Not configured"}</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Pathya (Do's)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Pathya (Do's)</label>
                       <Textarea
                         value={dietStats}
                         onChange={(event) => setDietStats(event.target.value)}
-                        placeholder="Write Pathya recommendations"
+                        placeholder="Write Pathya (beneficial recommendations)..."
                         rows={4}
                         className="border-gray-300"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Apathya (Don'ts)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Apathya (Don'ts)</label>
                       <Textarea
                         value={doctorAnalysis}
                         onChange={(event) => setDoctorAnalysis(event.target.value)}
@@ -1595,13 +2133,14 @@ export default function DoctorDashboard({
                       className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
                     >
                       <Save className="w-4 h-4" />
-                      <span>{saveDoctorPlanMutation.isPending ? "Saving..." : "Save Treatment Plan"}</span>
+                      <span>{saveDoctorPlanMutation.isPending ? "Saving..." : "Save & Generate Plan"}</span>
                     </button>
                     {planConfirmed && (
                       <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
                         Plan saved successfully
                       </span>
                     )}
+                  </div>
                   </div>
                 </div>
               ) : (
