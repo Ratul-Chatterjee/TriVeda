@@ -1572,6 +1572,11 @@ export default function DoctorDashboard({
             onFinalizeSuccess={() => {
               setPlanConfirmed(true);
               refetchDoctorAppointments();
+              if (selectedPatient?.id) {
+                window.sessionStorage.removeItem(`doctor:patient-mode:${selectedPatient.id}`);
+                window.sessionStorage.removeItem(`doctor:patient-appointment:${selectedPatient.id}`);
+              }
+              window.location.href = "/doctor/dashboard";
             }}
           />
         </div>
@@ -3880,6 +3885,7 @@ export default function DoctorDashboard({
 
               {sharedAppointments.filter((appointment) => 
                 (getAppointmentDateTime(appointment) >= new Date() || String(appointment.status || "").toUpperCase() === "LIVE") && 
+                !["COMPLETED", "CANCELLED"].includes(String(appointment.status || "").toUpperCase()) &&
                 appointment.assignedDoctor?.id === doctorId
               ).length === 0 ? (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-sm text-[#1F5C3F]">
@@ -3890,6 +3896,7 @@ export default function DoctorDashboard({
                   {sharedAppointments
                     .filter((appointment) => 
                       (getAppointmentDateTime(appointment) >= new Date() || String(appointment.status || "").toUpperCase() === "LIVE") && 
+                      !["COMPLETED", "CANCELLED"].includes(String(appointment.status || "").toUpperCase()) &&
                       appointment.assignedDoctor?.id === doctorId
                     )
                     .sort(

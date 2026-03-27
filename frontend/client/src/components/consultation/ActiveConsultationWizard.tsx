@@ -578,10 +578,7 @@ export default function ActiveConsultationWizard({
   };
 
   const updateManualRecommendations = (value: string) => {
-    const nextRecommendations = value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const nextRecommendations = value.split("\n");
 
     setManualDietChart((previous) => {
       const nextChart = {
@@ -912,6 +909,8 @@ export default function ActiveConsultationWizard({
         (medicine) =>
           medicine.name.trim() ||
           medicine.dosage.trim() ||
+          medicine.timingTime.trim() ||
+          medicine.medicineType.trim() ||
           medicine.duration.trim() ||
           medicine.notes.trim()
       )
@@ -919,13 +918,9 @@ export default function ActiveConsultationWizard({
         name: medicine.name,
         dosage: medicine.dosage,
         timing: formatMedicineTiming(medicine),
-        doctorNotes: [
-          medicine.medicineType ? `Type: ${medicine.medicineType}` : "",
-          medicine.duration ? `Duration: ${medicine.duration} days` : "",
-          medicine.notes,
-        ]
-          .filter(Boolean)
-          .join(" | "),
+        medicineType: medicine.medicineType,
+        durationDays: medicine.duration ? Number(medicine.duration) : null,
+        doctorNotes: medicine.notes,
       }));
 
     // Build asanas from activity chart
