@@ -87,6 +87,10 @@ export const appointmentApi = {
     return apiClient.get(`/appointments/patient/${patientId}/dashboard`);
   },
 
+  getLatestTreatmentPlan: async (patientId: string) => {
+    return apiClient.get(`/appointments/patient/${patientId}/treatment-plan`);
+  },
+
   reschedulePatientAppointment: async (
     patientId: string,
     appointmentId: string,

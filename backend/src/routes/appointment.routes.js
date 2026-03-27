@@ -8,6 +8,7 @@ import {
   markAppointmentLive,
   saveDoctorPlan,
   getDoctorAppointments,
+  getLatestTreatmentPlan,
   getPatientAppointments,
   reschedulePatientAppointment,
   cancelPatientAppointment,
@@ -29,6 +30,7 @@ router.put("/:appointmentId/live", markAppointmentLive);
 router.get("/doctor/:doctorId/patients", getDoctorPatients);
 router.get("/doctor/:doctorId", getDoctorAppointments);
 router.get("/patient/:patientId", getPatientAppointments);
+router.get('/patient/:patientId/treatment-plan', getLatestTreatmentPlan);
 router.put("/patient/:patientId/:appointmentId/reschedule", reschedulePatientAppointment);
 router.delete("/patient/:patientId/:appointmentId", cancelPatientAppointment);
 router.get("/patient/:patientId/dashboard", getPatientDashboardData);

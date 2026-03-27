@@ -30,6 +30,7 @@ model Patient {
   profileImageData     Bytes?
   profileImageMimeType String?
   appointments         Appointment[]
+  treatmentPlans       TreatmentPlan[]
   reports              PatientReport[]
   assessments          PrakritiAssessment[]
 }
@@ -82,6 +83,7 @@ model HospitalStaff {
   dateOfBirth       DateTime?
   gender            String?
   appointmentsAsDoc Appointment[]
+  treatmentPlans    TreatmentPlan[]
   doctorProfile     DoctorProfile?
   hospital          Hospital          @relation(fields: [hospitalId], references: [id])
   therapistProfile  TherapistProfile?
@@ -164,10 +166,38 @@ model TreatmentPlan {
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   appointment  Appointment           @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor       HospitalStaff         @relation(fields: [doctorId], references: [id])
+  patient      Patient               @relation(fields: [patientId], references: [id])
+  dietPlan     DietPlan?
   medications  TreatmentMedication[]
 
   @@index([patientId, createdAt])
   @@index([doctorId, createdAt])
+}
+
+model DietPlan {
+  id              String     @id @default(uuid())
+  treatmentPlanId String     @unique
+  title           String?
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  treatmentPlan   TreatmentPlan @relation(fields: [treatmentPlanId], references: [id], onDelete: Cascade)
+  items           DietItem[]
+}
+
+model DietItem {
+  id         String   @id @default(uuid())
+  dietPlanId String
+  mealTime   MealTime @default(OTHER)
+  itemName   String
+  notes      String?
+  isAvoid    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  dietPlan   DietPlan @relation(fields: [dietPlanId], references: [id], onDelete: Cascade)
+
+  @@index([dietPlanId, mealTime])
 }
 
 model TreatmentMedication {
@@ -265,4 +295,14 @@ enum AppointmentStatus {
   LIVE
   COMPLETED
   CANCELLED
+}
+
+enum MealTime {
+  EARLY_MORNING
+  BREAKFAST
+  MID_MORNING
+  LUNCH
+  EVENING
+  DINNER
+  OTHER
 }

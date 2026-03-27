@@ -213,6 +213,63 @@ const normalizeDoctorPlanPayload = (payload) => {
   };
 };
 
+const mealTimeAliases = {
+  "early morning": "EARLY_MORNING",
+  breakfast: "BREAKFAST",
+  "mid morning": "MID_MORNING",
+  lunch: "LUNCH",
+  evening: "EVENING",
+  dinner: "DINNER",
+};
+
+const normalizeMealTime = (value = "") => {
+  const normalized = String(value).trim().toLowerCase().replace(/[_-]+/g, " ");
+  return mealTimeAliases[normalized] || "OTHER";
+};
+
+const buildDietItemsFromChart = (dietChart) => {
+  const entries = [];
+
+  const parseMealLine = (line, isAvoid = false, fallbackMealTime = "OTHER") => {
+    const raw = String(line || "").trim();
+    if (!raw) return;
+
+    const splitIndex = raw.indexOf(":");
+    let mealTime = fallbackMealTime;
+    let itemsText = raw;
+
+    if (splitIndex >= 0) {
+      const mealLabel = raw.slice(0, splitIndex).trim();
+      itemsText = raw.slice(splitIndex + 1).trim();
+      mealTime = normalizeMealTime(mealLabel);
+    }
+
+    const foods = itemsText
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (foods.length === 0 && itemsText) {
+      foods.push(itemsText);
+    }
+
+    foods.forEach((itemName) => {
+      entries.push({
+        mealTime,
+        itemName,
+        notes: null,
+        isAvoid,
+      });
+    });
+  };
+
+  (dietChart?.items || []).forEach((line) => parseMealLine(line, false, "OTHER"));
+  (dietChart?.pathya || []).forEach((line) => parseMealLine(line, false, "OTHER"));
+  (dietChart?.apathya || []).forEach((line) => parseMealLine(line, true, "OTHER"));
+
+  return entries;
+};
+
 // ==========================================
 // 1. SMART INTAKE
 // ==========================================
@@ -713,6 +770,8 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Appointment not found.");
   }
 
+  const normalizedDietItems = buildDietItemsFromChart(normalized.dietChart);
+
   const appointment = await prisma.$transaction(async (tx) => {
     const updatedAppointment = await tx.appointment.update({
       where: { id: appointmentId },
@@ -748,6 +807,31 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
       },
     });
 
+    const dietPlan = await tx.dietPlan.upsert({
+      where: { treatmentPlanId: treatmentPlan.id },
+      create: {
+        treatmentPlanId: treatmentPlan.id,
+        title: "Doctor Prescribed Diet Plan",
+      },
+      update: {},
+    });
+
+    await tx.dietItem.deleteMany({
+      where: { dietPlanId: dietPlan.id },
+    });
+
+    if (normalizedDietItems.length > 0) {
+      await tx.dietItem.createMany({
+        data: normalizedDietItems.map((item) => ({
+          dietPlanId: dietPlan.id,
+          mealTime: item.mealTime,
+          itemName: item.itemName,
+          notes: item.notes,
+          isAvoid: item.isAvoid,
+        })),
+      });
+    }
+
     await tx.treatmentMedication.deleteMany({
       where: { treatmentPlanId: treatmentPlan.id },
     });
@@ -774,6 +858,39 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(200, { appointmentId: appointment.id }, "Plan saved.")
     );
+});
+
+export const getLatestTreatmentPlan = asyncHandler(async (req, res) => {
+  const { patientId } = req.params;
+
+  if (!patientId) {
+    throw new ApiError(400, "patientId is required.");
+  }
+
+  const treatmentPlan = await prisma.treatmentPlan.findFirst({
+    where: { patientId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      dietPlan: {
+        include: {
+          items: true,
+        },
+      },
+      doctor: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!treatmentPlan) {
+    throw new ApiError(404, "No treatment plan found for this patient.");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, treatmentPlan, "Latest treatment plan fetched."));
 });
 
 export const markAppointmentLive = asyncHandler(async (req, res) => {

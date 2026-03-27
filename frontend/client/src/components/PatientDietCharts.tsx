@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useLatestTreatmentPlan } from "@/hooks/useAppointments";
 import {
   BarChart,
   Bar,
@@ -488,9 +490,11 @@ const assignedDoctor = {
 };
 
 const DoctorCard = ({
+  doctor,
   onAsk,
   onRequest,
 }: {
+  doctor: { name: string; specialty: string; avatar: string; status: string };
   onAsk: () => void;
   onRequest: () => void;
 }) => (
@@ -509,7 +513,7 @@ const DoctorCard = ({
       <div className="flex items-center gap-3 sm:gap-6 min-w-0">
         <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-white/20 backdrop-blur-sm border-2 border-white/30 overflow-hidden shrink-0">
           <img
-            src={assignedDoctor.avatar}
+            src={doctor.avatar}
             alt="Doctor Avatar"
             className="w-full h-full object-cover"
           />
@@ -522,10 +526,10 @@ const DoctorCard = ({
               Assigned Doctor
             </span>
           </div>
-          <h3 className="text-lg sm:text-2xl font-bold mb-1 break-words">{assignedDoctor.name}</h3>
-          <p className="text-white/90 mb-2 text-sm sm:text-base break-words">{assignedDoctor.specialty}</p>
+          <h3 className="text-lg sm:text-2xl font-bold mb-1 break-words">{doctor.name}</h3>
+          <p className="text-white/90 mb-2 text-sm sm:text-base break-words">{doctor.specialty}</p>
           <span className="inline-block px-3 sm:px-4 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium border border-white/30">
-            {assignedDoctor.status}
+            {doctor.status}
           </span>
         </div>
       </div>
@@ -708,6 +712,194 @@ export default function AdvancedAyurvedicDietCharts() {
   const [showRecipeAlert, setShowRecipeAlert] = useState(false);
   const [recipeAlertContent, setRecipeAlertContent] = useState<string>("");
 
+  const user = JSON.parse(localStorage.getItem("triveda_user") || "{}");
+  const portal = String(user?.portal || "").toUpperCase();
+  const role = String(user?.role || "").toUpperCase();
+  const isPatientSession = portal === "PATIENT" || role === "PATIENT";
+  const patientId = isPatientSession ? String(user?.id || user?.patientId || "") : "";
+  const { data, isLoading, isError, error } = useLatestTreatmentPlan(patientId);
+
+  // apiClient already unwraps ApiResponse -> this `data` is the treatment plan payload.
+  const treatmentPlan = data as any;
+  const dietItems = treatmentPlan?.dietPlan?.items || [];
+
+  const mealTimeLabels: Record<string, string> = {
+    EARLY_MORNING: "Early Morning",
+    BREAKFAST: "Breakfast",
+    MID_MORNING: "Mid-Morning",
+    LUNCH: "Lunch",
+    EVENING: "Evening",
+    DINNER: "Dinner",
+    OTHER: "Other",
+  };
+
+  const mealTimeDefaultTime: Record<string, string> = {
+    EARLY_MORNING: "6:30 AM",
+    BREAKFAST: "8:00 AM",
+    MID_MORNING: "10:30 AM",
+    LUNCH: "1:00 PM",
+    EVENING: "5:00 PM",
+    DINNER: "7:30 PM",
+    OTHER: "--",
+  };
+
+  const mealOrder = [
+    "EARLY_MORNING",
+    "BREAKFAST",
+    "MID_MORNING",
+    "LUNCH",
+    "EVENING",
+    "DINNER",
+    "OTHER",
+  ];
+
+  const groupedDietItems = useMemo(() => {
+    const groups = new Map<string, { pathya: string[]; apathya: string[]; notes: string[] }>();
+
+    (dietItems || []).forEach((item: any) => {
+      const key = String(item?.mealTime || "OTHER");
+      if (!groups.has(key)) {
+        groups.set(key, { pathya: [], apathya: [], notes: [] });
+      }
+      const entry = groups.get(key)!;
+      if (item?.isAvoid) {
+        entry.apathya.push(String(item?.itemName || "").trim());
+      } else {
+        entry.pathya.push(String(item?.itemName || "").trim());
+      }
+      if (item?.notes) {
+        entry.notes.push(String(item.notes));
+      }
+    });
+
+    return mealOrder
+      .filter((mealKey) => groups.has(mealKey))
+      .map((mealKey) => {
+        const entry = groups.get(mealKey)!;
+        const pathyaFoods = entry.pathya.filter(Boolean);
+        const apathyaFoods = entry.apathya.filter(Boolean);
+        return {
+          meal: mealTimeLabels[mealKey] || mealKey,
+          mealKey,
+          time: mealTimeDefaultTime[mealKey] || "--",
+          pathyaFoods,
+          apathyaFoods,
+          foods: [...pathyaFoods, ...apathyaFoods],
+          rationale: entry.notes[0] || "Doctor-prescribed dietary guidance.",
+          calories: Math.max(0, pathyaFoods.length * 80),
+          constitution: apathyaFoods.length > 0 ? "Pathya + Apathya" : "Pathya",
+        };
+      })
+      .filter((meal) => meal.pathyaFoods.length > 0 || meal.apathyaFoods.length > 0);
+  }, [dietItems]);
+
+  const timelineLogs = useMemo(() => {
+    const createdAt = treatmentPlan?.createdAt
+      ? new Date(treatmentPlan.createdAt).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
+    return groupedDietItems.map((meal) => ({
+      date: createdAt,
+      meal: meal.meal,
+      status: meal.apathyaFoods.length > 0 ? "off-plan" : "on-plan",
+      rationale: meal.rationale,
+      foods: meal.pathyaFoods,
+      time: meal.time,
+      doshaEffect:
+        meal.apathyaFoods.length > 0
+          ? "Avoid Listed Foods"
+          : "Recommended by Doctor",
+    })) as MealLog[];
+  }, [groupedDietItems, treatmentPlan?.createdAt]);
+
+  const activeDoctor = {
+    ...assignedDoctor,
+    name: treatmentPlan?.doctor?.name || assignedDoctor.name,
+  };
+
+  const hasDietPlan = Boolean(treatmentPlan?.dietPlan && groupedDietItems.length > 0);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen relative bg-background text-foreground">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-6">
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+          </div>
+          <Skeleton className="h-96 w-full rounded-2xl" />
+          <Skeleton className="h-96 w-full rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!patientId) {
+    return (
+      <div className="min-h-screen relative bg-background text-foreground">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <motion.div
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-white/90 backdrop-blur-sm rounded-2xl border border-amber-100 shadow-xl p-8 text-center"
+          >
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Patient session not detected</h2>
+            <p className="text-slate-600 max-w-2xl mx-auto">
+              Please login as a patient account to view your prescribed Ayurvedic diet chart.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen relative bg-background text-foreground">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <motion.div
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-white/90 backdrop-blur-sm rounded-2xl border border-red-100 shadow-xl p-8 text-center"
+          >
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Unable to load diet plan</h2>
+            <p className="text-slate-600 max-w-2xl mx-auto">
+              {(error as Error)?.message || "Something went wrong while loading your treatment plan."}
+            </p>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasDietPlan) {
+    return (
+      <div className="min-h-screen relative bg-background text-foreground">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <motion.div
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-white/90 backdrop-blur-sm rounded-2xl border border-emerald-100 shadow-xl p-8 text-center"
+          >
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
+              <Utensils className="h-7 w-7 text-emerald-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">No active diet plan prescribed yet</h2>
+            <p className="text-slate-600 max-w-2xl mx-auto">
+              Please attend your scheduled consultation. Your personalized Ayurvedic diet plan will appear here after your doctor finalizes treatment.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  const todaysMealsData = groupedDietItems;
+  const mealLogsData = timelineLogs;
+
   return (
     <div className="min-h-screen relative bg-background text-foreground">
 
@@ -726,7 +918,7 @@ export default function AdvancedAyurvedicDietCharts() {
               </div>
               <div className="min-w-0 w-full max-w-full">
                 <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 via-[#10B981] to-[#0D9488] bg-clip-text text-transparent leading-tight break-words whitespace-normal">
-                  Your's Ayurvedic Journey
+                  Your Ayurvedic Journey
                 </h1>
                 <p className="text-sm sm:text-lg text-gray-600 mt-1 leading-relaxed break-words max-w-full">
                   Personalized nutrition tracking for holistic wellness
@@ -746,7 +938,7 @@ export default function AdvancedAyurvedicDietCharts() {
               <motion.button
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
-                  const data = mealLogs.map((meal) => ({
+                  const data = mealLogsData.map((meal) => ({
                     Date: meal.date,
                     Meal: meal.meal,
                     Status: meal.status,
@@ -1045,7 +1237,7 @@ export default function AdvancedAyurvedicDietCharts() {
           
           <div className="w-full space-y-4">
             <div className="md:hidden space-y-4">
-              {todaysMeals.map((meal, idx) => (
+              {todaysMealsData.map((meal, idx) => (
                 <motion.div
                   key={`mobile-meal-${idx}`}
                   initial={{ y: 12, opacity: 0 }}
@@ -1068,9 +1260,14 @@ export default function AdvancedAyurvedicDietCharts() {
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 mb-3">
-                    {meal.foods.map((food, i) => (
+                    {meal.pathyaFoods.map((food, i) => (
                       <span key={i} className="px-2 py-1 bg-white text-gray-700 rounded-lg text-xs border border-gray-100">
                         {food}
+                      </span>
+                    ))}
+                    {meal.apathyaFoods.map((food, i) => (
+                      <span key={`avoid-${i}`} className="px-2 py-1 bg-red-50 text-red-700 rounded-lg text-xs border border-red-100">
+                        Avoid: {food}
                       </span>
                     ))}
                   </div>
@@ -1123,7 +1320,7 @@ export default function AdvancedAyurvedicDietCharts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {todaysMeals.map((meal, idx) => (
+                  {todaysMealsData.map((meal, idx) => (
                     <React.Fragment key={idx}>
                       <motion.tr
                         initial={{ x: -20, opacity: 0 }}
@@ -1146,12 +1343,20 @@ export default function AdvancedAyurvedicDietCharts() {
                         <td className="py-4 px-4 text-gray-600 text-sm whitespace-nowrap">{meal.time}</td>
                         <td className="py-4 px-4 text-sm">
                           <div className="flex flex-wrap gap-1">
-                            {meal.foods.map((food, i) => (
+                            {meal.pathyaFoods.map((food, i) => (
                               <span
                                 key={i}
                                 className="px-2 py-1 bg-gray-100 text-gray-800 rounded-lg text-xs"
                               >
                                 {food}
+                              </span>
+                            ))}
+                            {meal.apathyaFoods.map((food, i) => (
+                              <span
+                                key={`avoid-table-${i}`}
+                                className="px-2 py-1 bg-red-100 text-red-700 rounded-lg text-xs"
+                              >
+                                Avoid: {food}
                               </span>
                             ))}
                           </div>
@@ -1214,11 +1419,12 @@ export default function AdvancedAyurvedicDietCharts() {
 
         {/* Doctor Card */}
         <DoctorCard
+          doctor={activeDoctor}
           onAsk={() => setShowAskModal(true)}
           onRequest={() => {
             setAlertContent({
               title: "Appointment Requested!",
-              message: `Your appointment request has been sent to ${assignedDoctor.name}. You will be notified once it is confirmed.`,
+              message: `Your appointment request has been sent to ${activeDoctor.name}. You will be notified once it is confirmed.`,
             });
             setShowAlert(true);
           }}
@@ -1256,7 +1462,7 @@ export default function AdvancedAyurvedicDietCharts() {
           </div>
           
           <div className="space-y-4">
-            {mealLogs
+            {mealLogsData
               .filter((meal) => {
                 if (selectedMealFilter === "all") return true;
                 return meal.meal.toLowerCase() === selectedMealFilter;
@@ -1276,7 +1482,7 @@ export default function AdvancedAyurvedicDietCharts() {
           {/* Ask Question Modal */}
           {showAskModal && (
             <ModalPopup
-              title={`Ask a Question to ${assignedDoctor.name}`}
+              title={`Ask a Question to ${activeDoctor.name}`}
               onClose={() => setShowAskModal(false)}
             >
               <div className="space-y-4">
@@ -1301,7 +1507,7 @@ export default function AdvancedAyurvedicDietCharts() {
                       setAskMessage("");
                       setAlertContent({
                         title: "Message Sent!",
-                        message: `Your message has been sent to ${assignedDoctor.name}. You will receive a reply soon.`,
+                        message: `Your message has been sent to ${activeDoctor.name}. You will receive a reply soon.`,
                       });
                       setShowAlert(true);
                     }}

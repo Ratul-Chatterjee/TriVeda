@@ -104,6 +104,14 @@ export const usePatientDashboard = (patientId: string) => {
   });
 };
 
+export const useLatestTreatmentPlan = (patientId: string) => {
+  return useQuery({
+    queryKey: ["patientTreatmentPlan", patientId],
+    queryFn: () => appointmentApi.getLatestTreatmentPlan(patientId),
+    enabled: !!patientId,
+  });
+};
+
 export const useSavePrakritiAssessment = () => {
   const { toast } = useToast();
 
