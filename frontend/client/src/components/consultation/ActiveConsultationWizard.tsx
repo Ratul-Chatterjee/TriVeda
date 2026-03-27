@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
+  BookOpen,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -25,6 +26,7 @@ import {
   Droplets,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,6 +49,19 @@ import type {
 export type AssessmentAnswer = {
   question: string;
   answer: string;
+};
+
+type ManualDietMeal = {
+  meal: string;
+  foods: string[];
+  time: string;
+  rationale: string;
+  calories: number;
+};
+
+type ManualDietChart = {
+  meals: ManualDietMeal[];
+  recommendations: string[];
 };
 
 type MedicineDraft = {
@@ -133,8 +148,43 @@ export default function ActiveConsultationWizard({
   }));
 
   const [dietQuickSearch, setDietQuickSearch] = useState("");
+  const [dietFlowStep, setDietFlowStep] = useState(1);
+  const [dietSelectedMealIdx, setDietSelectedMealIdx] = useState(0);
   const [asanaQuickSearch, setAsanaQuickSearch] = useState("");
   const [medicineQuickSearch, setMedicineQuickSearch] = useState("");
+  const [manualDietChart, setManualDietChart] = useState<ManualDietChart>({
+    meals: [
+      {
+        meal: "Breakfast",
+        foods: [],
+        time: "8:00 AM",
+        rationale: "",
+        calories: 0,
+      },
+      {
+        meal: "Lunch",
+        foods: [],
+        time: "1:00 PM",
+        rationale: "",
+        calories: 0,
+      },
+      {
+        meal: "Snack",
+        foods: [],
+        time: "4:30 PM",
+        rationale: "",
+        calories: 0,
+      },
+      {
+        meal: "Dinner",
+        foods: [],
+        time: "7:00 PM",
+        rationale: "",
+        calories: 0,
+      },
+    ],
+    recommendations: [],
+  });
 
   const saveDoctorPlanMutation = useSaveDoctorPlan();
   const { data: treatmentCatalogData } = useTreatmentCatalogs();
@@ -266,16 +316,114 @@ export default function ActiveConsultationWizard({
     }));
   };
 
-  const addFoodLine = (food: FoodCatalogItem) => {
-    const line = `- ${food.name}`;
+  const syncDietDataFromManualChart = (nextChart: ManualDietChart) => {
+    const itemLines = nextChart.meals
+      .filter((meal) => meal.foods.length > 0)
+      .map((meal) => `${meal.meal}: ${meal.foods.join(", ")}`)
+      .join("\n");
+
+    const pathyaLines = nextChart.recommendations.join("\n");
+
     setConsultationData((previous) => ({
       ...previous,
       diet: {
         ...previous.diet,
         include: true,
-        items: previous.diet.items.trim() ? `${previous.diet.items}\n${line}` : line,
+        items: itemLines,
+        pathya: pathyaLines,
       },
     }));
+  };
+
+  const foodCaloriesByName = useMemo(() => {
+    const map = new Map<string, number>();
+    foodCatalog.forEach((food) => {
+      const parsedCalories = Number(food.calories || 0);
+      map.set(food.name, Number.isFinite(parsedCalories) ? parsedCalories : 0);
+    });
+    return map;
+  }, [foodCatalog]);
+
+  const addManualDietFood = (food: FoodCatalogItem) => {
+    setManualDietChart((previous) => {
+      const nextMeals = previous.meals.map((meal, index) => {
+        if (index !== dietSelectedMealIdx) return meal;
+
+        if (meal.foods.includes(food.name)) {
+          return meal;
+        }
+
+        return {
+          ...meal,
+          foods: [...meal.foods, food.name],
+          calories: meal.calories + (foodCaloriesByName.get(food.name) || 0),
+        };
+      });
+
+      const nextChart = {
+        ...previous,
+        meals: nextMeals,
+      };
+
+      syncDietDataFromManualChart(nextChart);
+      return nextChart;
+    });
+  };
+
+  const removeManualDietFood = (foodIndex: number) => {
+    setManualDietChart((previous) => {
+      const nextMeals = previous.meals.map((meal, index) => {
+        if (index !== dietSelectedMealIdx) return meal;
+
+        const foodName = meal.foods[foodIndex];
+        const nextFoods = meal.foods.filter((_, idx) => idx !== foodIndex);
+        const nextCalories = Math.max(0, meal.calories - (foodCaloriesByName.get(foodName) || 0));
+
+        return {
+          ...meal,
+          foods: nextFoods,
+          calories: nextCalories,
+        };
+      });
+
+      const nextChart = {
+        ...previous,
+        meals: nextMeals,
+      };
+
+      syncDietDataFromManualChart(nextChart);
+      return nextChart;
+    });
+  };
+
+  const updateManualMealRationale = (value: string) => {
+    setManualDietChart((previous) => ({
+      ...previous,
+      meals: previous.meals.map((meal, index) =>
+        index === dietSelectedMealIdx
+          ? {
+              ...meal,
+              rationale: value,
+            }
+          : meal
+      ),
+    }));
+  };
+
+  const updateManualRecommendations = (value: string) => {
+    const nextRecommendations = value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    setManualDietChart((previous) => {
+      const nextChart = {
+        ...previous,
+        recommendations: nextRecommendations,
+      };
+      syncDietDataFromManualChart(nextChart);
+      return nextChart;
+    });
   };
 
   const addAsanaLine = (asana: AsanaCatalogItem) => {
@@ -697,98 +845,360 @@ export default function ActiveConsultationWizard({
           )}
 
           {currentStep === 2 && (
-            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-white">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2 text-emerald-900">
-                  <Utensils className="h-4 w-4" />
-                  Diet & Nutrition (Optional)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-                <div className="xl:col-span-8 space-y-3">
-                  <Input
-                    value={dietQuickSearch}
-                    onChange={(event) => setDietQuickSearch(event.target.value)}
-                    placeholder="Search foods"
-                    className="border-emerald-200"
-                  />
-                  <div className="max-h-64 overflow-y-auto rounded-lg border border-emerald-100 bg-white p-3">
-                    <div className="space-y-2">
-                      {filteredFoods.slice(0, 10).map((food) => (
-                        <div key={food.id} className="flex items-center justify-between rounded-md border border-emerald-100 px-3 py-2">
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">{food.name}</p>
-                            <p className="text-xs text-slate-500">{food.category || "Food"} • {food.calories || 0} kcal</p>
-                          </div>
-                          <Button type="button" size="sm" className="bg-[#1F5C3F] text-white" onClick={() => addFoodLine(food)}>
-                            Add
-                          </Button>
-                        </div>
-                      ))}
+            <Card className="border-slate-200 bg-white">
+              <CardHeader className="space-y-4 border-b border-slate-200 pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-[#1F5C3F] p-2">
+                      <Utensils className="h-5 w-5 text-white" />
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Diet Chart Items</label>
-                    <Textarea
-                      value={consultationData.diet.items}
-                      onChange={(event) =>
-                        setConsultationData((previous) => ({
-                          ...previous,
-                          diet: {
-                            ...previous.diet,
-                            include: true,
-                            items: event.target.value,
-                          },
-                        }))
-                      }
-                      rows={6}
-                      className="border-emerald-200"
-                    />
-                  </div>
-                </div>
-
-                <div className="xl:col-span-4 space-y-3">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Pathya (Do)</label>
-                    <Textarea
-                      value={consultationData.diet.pathya}
-                      onChange={(event) =>
-                        setConsultationData((previous) => ({
-                          ...previous,
-                          diet: {
-                            ...previous.diet,
-                            include: true,
-                            pathya: event.target.value,
-                          },
-                        }))
-                      }
-                      rows={5}
-                      className="border-emerald-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Apathya (Avoid)</label>
-                    <Textarea
-                      value={consultationData.diet.apathya}
-                      onChange={(event) =>
-                        setConsultationData((previous) => ({
-                          ...previous,
-                          diet: {
-                            ...previous.diet,
-                            include: true,
-                            apathya: event.target.value,
-                          },
-                        }))
-                      }
-                      rows={5}
-                      className="border-emerald-200"
-                    />
+                    <div>
+                      <CardTitle className="text-xl text-slate-900">Create Diet Chart</CardTitle>
+                      <p className="text-sm text-slate-600">
+                        {patientName} • {consultationData.diagnosis.finalPrakriti || "Constitution"}
+                      </p>
+                    </div>
                   </div>
                   <Button type="button" variant="outline" onClick={() => skipStep(2)}>
                     Skip this step
                   </Button>
                 </div>
+
+                <div className="flex flex-wrap items-center gap-4">
+                  {[
+                    { step: 1, title: "Food Selection", icon: Utensils },
+                    { step: 2, title: "Meal Planning", icon: Clock },
+                    { step: 3, title: "Recommendations", icon: BookOpen },
+                    { step: 4, title: "Review & Publish", icon: CheckCircle2 },
+                  ].map(({ step, title, icon: Icon }) => (
+                    <div key={step} className="flex items-center gap-2">
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                          dietFlowStep === step
+                            ? "bg-[#1F5C3F] text-white"
+                            : dietFlowStep > step
+                            ? "bg-green-600 text-white"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {dietFlowStep > step ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                      </div>
+                      <span
+                        className={`text-sm font-medium ${
+                          dietFlowStep === step
+                            ? "text-[#1F5C3F]"
+                            : dietFlowStep > step
+                            ? "text-green-600"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {title}
+                      </span>
+                      {step < 4 && <ChevronRight className="h-4 w-4 text-slate-400" />}
+                    </div>
+                  ))}
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-6">
+                {dietFlowStep === 1 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900">Select Foods for Meals</h3>
+
+                      <div className="mb-4 flex space-x-1 rounded-lg bg-slate-100 p-1">
+                        {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, idx) => (
+                          <Button
+                            key={meal}
+                            type="button"
+                            size="sm"
+                            variant={dietSelectedMealIdx === idx ? "default" : "ghost"}
+                            onClick={() => setDietSelectedMealIdx(idx)}
+                            className={`flex-1 ${dietSelectedMealIdx === idx ? "bg-white shadow-sm text-slate-900" : ""}`}
+                          >
+                            {meal}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <div className="mb-4">
+                        <Input
+                          value={dietQuickSearch}
+                          onChange={(event) => setDietQuickSearch(event.target.value)}
+                          placeholder="Search foods by name, category, or therapeutic properties..."
+                          className="border-slate-300"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        <div>
+                          <h4 className="mb-3 font-medium text-slate-900">Available Foods</h4>
+                          <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-4">
+                            {filteredFoods.map((food) => (
+                              <div key={food.id} className="rounded-lg bg-white p-3 shadow-sm">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <div>
+                                    <h5 className="font-medium text-slate-900">{food.name}</h5>
+                                    <div className="flex items-center space-x-2 text-xs text-slate-600">
+                                      <span>{food.category || "Food"}</span>
+                                      <span>•</span>
+                                      <span>{food.calories || 0} kcal</span>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90"
+                                    onClick={() => {
+                                      addManualDietFood(food);
+                                    }}
+                                  >
+                                    Add
+                                  </Button>
+                                </div>
+                                <div className="flex items-center space-x-2 text-xs">
+                                  {food.rasa && <Badge className="bg-emerald-100 text-[#1F5C3F]">{food.rasa}</Badge>}
+                                  {food.dosha && (
+                                    <Badge className="bg-green-100 text-green-800">{food.dosha}</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="mb-3 font-medium text-slate-900">
+                            Selected for {manualDietChart.meals[dietSelectedMealIdx].meal}
+                          </h4>
+                          <div className="rounded-lg bg-emerald-50 p-4">
+                            <div className="mb-3 flex items-center justify-between">
+                              <span className="text-sm font-medium text-[#1F5C3F]">Total Calories</span>
+                              <span className="text-lg font-bold text-[#1F5C3F]">
+                                {manualDietChart.meals[dietSelectedMealIdx].calories} kcal
+                              </span>
+                            </div>
+
+                            {manualDietChart.meals[dietSelectedMealIdx].foods.length === 0 ? (
+                              <div className="py-8 text-center text-slate-500">
+                                <Utensils className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                                <p>No foods selected for this meal</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {manualDietChart.meals[dietSelectedMealIdx].foods.map((food, idx) => (
+                                  <div key={`${food}-${idx}`} className="flex items-center justify-between rounded-lg bg-white p-3">
+                                    <span className="font-medium text-slate-900">{food}</span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-red-300 text-red-700 hover:bg-red-50"
+                                      onClick={() => removeManualDietFood(idx)}
+                                    >
+                                      Remove
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end border-t pt-4">
+                      <Button
+                        type="button"
+                        onClick={() => setDietFlowStep(2)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90"
+                      >
+                        Next: Meal Planning
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 2 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900">Add Therapeutic Rationale</h3>
+
+                      <div className="mb-4 flex space-x-1 rounded-lg bg-slate-100 p-1">
+                        {["Breakfast", "Lunch", "Snack", "Dinner"].map((meal, idx) => (
+                          <Button
+                            key={meal}
+                            type="button"
+                            size="sm"
+                            variant={dietSelectedMealIdx === idx ? "default" : "ghost"}
+                            onClick={() => setDietSelectedMealIdx(idx)}
+                            className={`flex-1 ${dietSelectedMealIdx === idx ? "bg-white shadow-sm text-slate-900" : ""}`}
+                          >
+                            {meal} ({manualDietChart.meals[idx].foods.length})
+                          </Button>
+                        ))}
+                      </div>
+
+                      <div className="rounded-lg bg-slate-50 p-6">
+                        <div className="mb-4">
+                          <h4 className="mb-2 font-medium text-slate-900">
+                            {manualDietChart.meals[dietSelectedMealIdx].meal} - {manualDietChart.meals[dietSelectedMealIdx].time}
+                          </h4>
+                          <div className="mb-3 flex flex-wrap gap-2">
+                            {manualDietChart.meals[dietSelectedMealIdx].foods.map((food, idx) => (
+                              <Badge key={`${food}-${idx}`} className="bg-emerald-100 text-[#1F5C3F]">
+                                {food}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">Therapeutic Rationale *</label>
+                          <Textarea
+                            className="border-slate-300"
+                            rows={4}
+                            placeholder="Explain the therapeutic benefits of this meal combination for the patient's constitution and condition..."
+                            value={manualDietChart.meals[dietSelectedMealIdx].rationale}
+                            onChange={(event) => updateManualMealRationale(event.target.value)}
+                          />
+                          <p className="mt-1 text-xs text-slate-500">
+                            Describe how these foods support the patient's dosha balance and health goals.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between border-t pt-4">
+                      <Button type="button" variant="outline" onClick={() => setDietFlowStep(1)}>
+                        Back to Food Selection
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => setDietFlowStep(3)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90"
+                      >
+                        Next: Recommendations
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 3 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900">General Lifestyle Recommendations</h3>
+
+                      <div className="rounded-lg bg-slate-50 p-6">
+                        <label className="mb-2 block text-sm font-medium text-slate-700">
+                          Dietary and Lifestyle Guidelines *
+                        </label>
+                        <Textarea
+                          className="border-slate-300"
+                          rows={8}
+                          placeholder={`Enter personalized recommendations, one per line:\n• Eat meals at regular times to support digestive fire\n• Drink warm water throughout the day\n• Avoid cold drinks with meals\n• Practice mindful eating in a calm environment\n• Include warming spices like ginger and cumin\n• Take a short walk after meals to aid digestion`}
+                          value={manualDietChart.recommendations.join("\n")}
+                          onChange={(event) => updateManualRecommendations(event.target.value)}
+                        />
+                        <p className="mt-1 text-xs text-slate-500">
+                          Provide holistic guidance covering diet, timing, preparation methods, and lifestyle practices.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between border-t pt-4">
+                      <Button type="button" variant="outline" onClick={() => setDietFlowStep(2)}>
+                        Back to Meal Planning
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => setDietFlowStep(4)}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90"
+                      >
+                        Review & Publish
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {dietFlowStep === 4 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900">Review Diet Chart</h3>
+
+                      <div className="space-y-6 rounded-lg bg-slate-50 p-6">
+                        <div className="rounded-lg bg-white p-4">
+                          <h4 className="mb-3 font-semibold text-slate-900">Patient Information</h4>
+                          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                            <div>
+                              <span className="text-slate-600">Name:</span>
+                              <span className="ml-2 font-medium">{patientName}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-600">Constitution:</span>
+                              <span className="ml-2 font-medium">
+                                {consultationData.diagnosis.finalPrakriti || "Not specified"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg bg-white p-4">
+                          <h4 className="mb-3 font-semibold text-slate-900">Daily Meal Plan</h4>
+                          <div className="space-y-4">
+                            {manualDietChart.meals.map((meal, idx) => (
+                              <div key={`${meal.meal}-${idx}`} className="rounded-lg border border-slate-200 p-4">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <h5 className="font-medium text-slate-900">{meal.meal}</h5>
+                                  <div className="text-sm text-slate-600">
+                                    {meal.time} • {meal.calories} kcal
+                                  </div>
+                                </div>
+                                <div className="mb-2 text-sm">
+                                  <span className="text-slate-600">Foods: </span>
+                                  <span>{meal.foods.join(", ") || "None selected"}</span>
+                                </div>
+                                {meal.rationale && (
+                                  <div className="rounded bg-slate-50 p-2 text-sm italic text-slate-700">{meal.rationale}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg bg-white p-4">
+                          <h4 className="mb-3 font-semibold text-slate-900">Lifestyle Recommendations</h4>
+                          {manualDietChart.recommendations.length > 0 ? (
+                            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+                              {manualDietChart.recommendations.map((recommendation, idx) => (
+                                <li key={`${recommendation}-${idx}`}>{recommendation}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-500">No recommendations added yet.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between border-t pt-4">
+                      <Button type="button" variant="outline" onClick={() => setDietFlowStep(3)}>
+                        Back to Recommendations
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={goNext}
+                        className="bg-[#1F5C3F] hover:bg-[#1F5C3F]/90"
+                      >
+                        Continue to Lifestyle
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1001,6 +1411,7 @@ export default function ActiveConsultationWizard({
             onClick={goNext}
             disabled={
               currentStep === 4 ||
+              (currentStep === 2 && dietFlowStep < 4) ||
               (currentStep === 1 && !canGoNextFromDiagnosis)
             }
             className="min-w-[112px] bg-[#1F5C3F] text-white hover:bg-[#184734]"
