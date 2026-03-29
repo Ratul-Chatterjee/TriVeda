@@ -17,6 +17,8 @@ import PatientRegistration from "./components/PatientRegistration";
 import PrakritiAssessment from "./components/PrakritiAssessment";
 import PatientDashboard from "./components/PatientDashboard";
 import PatientDietCharts from "./components/PatientDietCharts";
+import PatientAsanas from "./components/PatientAsanas";
+import PatientMedicines from "./components/PatientMedicines";
 import PatientHealthRecords from "./components/PatientHealthRecords";
 import PatientReports from "./components/PatientReports";
 import PatientProfile from "./components/PatientProfile";
@@ -49,6 +51,18 @@ const PatientDashboardPage = () => (
 const PatientDietChartsPage = () => (
   <AppLayout userType="patient">
     <PatientDietCharts />
+  </AppLayout>
+);
+
+const PatientAsanasPage = () => (
+  <AppLayout userType="patient">
+    <PatientAsanas />
+  </AppLayout>
+);
+
+const PatientMedicinesPage = () => (
+  <AppLayout userType="patient">
+    <PatientMedicines />
   </AppLayout>
 );
 
@@ -176,6 +190,8 @@ function Router() {
       />
       <Route path="/patient/dashboard" component={PatientDashboardPage} />
       <Route path="/patient/diet-charts" component={PatientDietChartsPage} />
+      <Route path="/patient/asanas" component={PatientAsanasPage} />
+      <Route path="/patient/medicines" component={PatientMedicinesPage} />
       <Route
         path="/patient/health-records"
         component={PatientHealthRecordsPage}

@@ -162,6 +162,14 @@ export default function ActiveConsultationWizard({
       items: "",
       pathya: "",
       apathya: "",
+      selectedFoods: [] as Array<{
+        name: string;
+        mealType: string;
+        timing: string;
+        portion: string;
+        notes: string;
+        isAvoid: boolean;
+      }>,
     },
     lifestyle: {
       include: true,
@@ -264,6 +272,20 @@ export default function ActiveConsultationWizard({
       },
     ],
     rules: "",
+  });
+
+  const [planLifecycleDraft, setPlanLifecycleDraft] = useState({
+    effectiveFrom: new Date().toISOString().split("T")[0],
+    effectiveTo: "",
+    dietStopConditions: "",
+    asanaStopConditions: "",
+    medicineStopConditions: "",
+    dietReviewCadenceDays: "",
+    asanaReviewCadenceDays: "",
+    medicineReviewCadenceDays: "",
+    notifyOnWorking: true,
+    notifyOnNotEffective: true,
+    notifyOnTerminateRequest: true,
   });
 
   const saveDoctorPlanMutation = useSaveDoctorPlan();
@@ -461,6 +483,17 @@ export default function ActiveConsultationWizard({
 
     const pathyaLines = nextChart.recommendations.join("\n");
 
+    const selectedFoods = nextChart.meals.flatMap((meal) =>
+      meal.foods.map((food) => ({
+        name: food,
+        mealType: meal.meal,
+        timing: meal.time,
+        portion: "",
+        notes: meal.rationale || "",
+        isAvoid: false,
+      }))
+    );
+
     setConsultationData((previous) => ({
       ...previous,
       diet: {
@@ -468,6 +501,7 @@ export default function ActiveConsultationWizard({
         include: true,
         items: itemLines,
         pathya: pathyaLines,
+        selectedFoods,
       },
     }));
   };
@@ -961,6 +995,9 @@ export default function ActiveConsultationWizard({
               .map((line) => line.trim())
               .filter(Boolean)
           : [],
+        selectedFoods: consultationData.diet.include
+          ? consultationData.diet.selectedFoods || []
+          : [],
       },
       routinePlan: {
         exercisesAndAsanas: asanasFromChart.length > 0
@@ -977,6 +1014,40 @@ export default function ActiveConsultationWizard({
         tests: [],
       },
       medications,
+      planLifecycle: {
+        effectiveFrom: planLifecycleDraft.effectiveFrom,
+        effectiveTo: planLifecycleDraft.effectiveTo || null,
+        overallStatus: "ACTIVE",
+        diet: {
+          stopConditions: planLifecycleDraft.dietStopConditions,
+          reviewCadenceDays: planLifecycleDraft.dietReviewCadenceDays
+            ? Number(planLifecycleDraft.dietReviewCadenceDays)
+            : null,
+          patientGuidance: "Use patient feedback actions for diet effectiveness updates.",
+          status: "ACTIVE",
+        },
+        asanas: {
+          stopConditions: planLifecycleDraft.asanaStopConditions,
+          reviewCadenceDays: planLifecycleDraft.asanaReviewCadenceDays
+            ? Number(planLifecycleDraft.asanaReviewCadenceDays)
+            : null,
+          patientGuidance: "Use patient feedback actions for asana effectiveness updates.",
+          status: "ACTIVE",
+        },
+        medicines: {
+          stopConditions: planLifecycleDraft.medicineStopConditions,
+          reviewCadenceDays: planLifecycleDraft.medicineReviewCadenceDays
+            ? Number(planLifecycleDraft.medicineReviewCadenceDays)
+            : null,
+          patientGuidance: "Use patient feedback actions for medicine effectiveness updates.",
+          status: "ACTIVE",
+        },
+        feedbackSettings: {
+          notifyOnWorking: planLifecycleDraft.notifyOnWorking,
+          notifyOnNotEffective: planLifecycleDraft.notifyOnNotEffective,
+          notifyOnTerminateRequest: planLifecycleDraft.notifyOnTerminateRequest,
+        },
+      },
       isCompleted: true,
     };
 
@@ -2005,6 +2076,26 @@ export default function ActiveConsultationWizard({
                         </div>
                       </div>
                     </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setActivityFlowStep(1)}
+                        className="bg-white"
+                      >
+                        <ChevronLeft className="mr-1 h-4 w-4" />
+                        Back
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => setActivityFlowStep(3)}
+                        className="ml-auto bg-sky-700 text-white hover:bg-sky-800"
+                      >
+                        Next: Sleep & Rules
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -2321,6 +2412,111 @@ export default function ActiveConsultationWizard({
                 </div>
 
                 <div className="xl:col-span-8 space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                  <div className="rounded-lg border border-amber-200 bg-white p-3 space-y-3">
+                    <h4 className="text-sm font-semibold text-slate-900">Plan Tracking & Stop Conditions</h4>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <Input
+                        type="date"
+                        value={planLifecycleDraft.effectiveFrom}
+                        onChange={(event) =>
+                          setPlanLifecycleDraft((prev) => ({ ...prev, effectiveFrom: event.target.value }))
+                        }
+                        placeholder="Effective from"
+                      />
+                      <Input
+                        type="date"
+                        value={planLifecycleDraft.effectiveTo}
+                        onChange={(event) =>
+                          setPlanLifecycleDraft((prev) => ({ ...prev, effectiveTo: event.target.value }))
+                        }
+                        placeholder="Suggested stop date"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                      <Input
+                        value={planLifecycleDraft.dietReviewCadenceDays}
+                        onChange={(event) =>
+                          setPlanLifecycleDraft((prev) => ({ ...prev, dietReviewCadenceDays: event.target.value }))
+                        }
+                        placeholder="Diet review cadence (days)"
+                      />
+                      <Input
+                        value={planLifecycleDraft.asanaReviewCadenceDays}
+                        onChange={(event) =>
+                          setPlanLifecycleDraft((prev) => ({ ...prev, asanaReviewCadenceDays: event.target.value }))
+                        }
+                        placeholder="Asanas review cadence (days)"
+                      />
+                      <Input
+                        value={planLifecycleDraft.medicineReviewCadenceDays}
+                        onChange={(event) =>
+                          setPlanLifecycleDraft((prev) => ({ ...prev, medicineReviewCadenceDays: event.target.value }))
+                        }
+                        placeholder="Medicine review cadence (days)"
+                      />
+                    </div>
+
+                    <Textarea
+                      value={planLifecycleDraft.dietStopConditions}
+                      onChange={(event) =>
+                        setPlanLifecycleDraft((prev) => ({ ...prev, dietStopConditions: event.target.value }))
+                      }
+                      placeholder="Diet stop conditions (e.g., continue until symptom score below threshold)"
+                      rows={2}
+                    />
+                    <Textarea
+                      value={planLifecycleDraft.asanaStopConditions}
+                      onChange={(event) =>
+                        setPlanLifecycleDraft((prev) => ({ ...prev, asanaStopConditions: event.target.value }))
+                      }
+                      placeholder="Asanas stop conditions"
+                      rows={2}
+                    />
+                    <Textarea
+                      value={planLifecycleDraft.medicineStopConditions}
+                      onChange={(event) =>
+                        setPlanLifecycleDraft((prev) => ({ ...prev, medicineStopConditions: event.target.value }))
+                      }
+                      placeholder="Medicines stop conditions"
+                      rows={2}
+                    />
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3 text-xs text-slate-700">
+                      <label className="flex items-center gap-2 rounded border border-amber-100 px-2 py-2">
+                        <input
+                          type="checkbox"
+                          checked={planLifecycleDraft.notifyOnWorking}
+                          onChange={(event) =>
+                            setPlanLifecycleDraft((prev) => ({ ...prev, notifyOnWorking: event.target.checked }))
+                          }
+                        />
+                        Notify doctor when plan is working
+                      </label>
+                      <label className="flex items-center gap-2 rounded border border-amber-100 px-2 py-2">
+                        <input
+                          type="checkbox"
+                          checked={planLifecycleDraft.notifyOnNotEffective}
+                          onChange={(event) =>
+                            setPlanLifecycleDraft((prev) => ({ ...prev, notifyOnNotEffective: event.target.checked }))
+                          }
+                        />
+                        Notify doctor when not effective
+                      </label>
+                      <label className="flex items-center gap-2 rounded border border-amber-100 px-2 py-2">
+                        <input
+                          type="checkbox"
+                          checked={planLifecycleDraft.notifyOnTerminateRequest}
+                          onChange={(event) =>
+                            setPlanLifecycleDraft((prev) => ({ ...prev, notifyOnTerminateRequest: event.target.checked }))
+                          }
+                        />
+                        Notify doctor for termination request
+                      </label>
+                    </div>
+                  </div>
+
                   {consultationData.medicines.map((medicine) => (
                     <div key={medicine.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                       <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-2">

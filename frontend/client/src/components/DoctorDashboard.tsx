@@ -216,10 +216,20 @@ export default function DoctorDashboard({
   patientId,
 }: DoctorDashboardProps) {
   const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
-  const doctorId =
-    loggedInUser?.portal === "DOCTOR" || loggedInUser?.role === "DOCTOR"
-      ? loggedInUser?.id || ""
+  const rememberedDoctorId =
+    typeof window !== "undefined"
+      ? String(window.sessionStorage.getItem("doctor:active-id") || "").trim()
       : "";
+  const normalizedRole = String(loggedInUser?.role || loggedInUser?.portal || "").toUpperCase();
+  const rawDoctorId = String(loggedInUser?.id || loggedInUser?.staffId || "").trim();
+  const doctorId = normalizedRole && normalizedRole !== "DOCTOR" ? "" : (rawDoctorId || rememberedDoctorId);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (doctorId) {
+      window.sessionStorage.setItem("doctor:active-id", doctorId);
+    }
+  }, [doctorId]);
   const { data: doctorProfileData, isLoading: isDoctorProfileLoading } = useDoctorProfile(doctorId);
   const { data: doctorPatientsData, isLoading: isDoctorPatientsLoading } = useDoctorPatients(doctorId);
   const {

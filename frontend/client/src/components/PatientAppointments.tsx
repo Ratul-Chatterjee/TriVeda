@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Calendar,
@@ -81,11 +82,30 @@ type PatientAppointmentsProps = {
 
 function PatientAppointments({ showSidebar = false }: PatientAppointmentsProps) {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
-  const patientId = loggedInUser?.id || "";
+  const normalizedPortal = String(loggedInUser?.portal || "").trim().toUpperCase();
+  const normalizedRole = String(loggedInUser?.role || "").trim().toUpperCase();
+  const rawPatientId = String(loggedInUser?.id || "").trim();
+  const rememberedPatientId =
+    typeof window !== "undefined"
+      ? String(window.sessionStorage.getItem("patient:active-id") || "").trim()
+      : "";
+  const isPatientSession =
+    normalizedPortal === "PATIENT" ||
+    normalizedRole === "PATIENT" ||
+    (!!rawPatientId && normalizedRole !== "DOCTOR" && normalizedRole !== "ADMIN");
+  const patientId = isPatientSession ? (rawPatientId || rememberedPatientId) : "";
   const patientName = loggedInUser?.name || "Patient User";
   const patientAge = loggedInUser?.age ? String(loggedInUser.age) : "-";
   const patientGender = loggedInUser?.gender || "-";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (rawPatientId) {
+      window.sessionStorage.setItem("patient:active-id", rawPatientId);
+    }
+  }, [rawPatientId]);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
@@ -374,6 +394,9 @@ function PatientAppointments({ showSidebar = false }: PatientAppointmentsProps) 
       const storedBooking = appointmentId
         ? { ...booking, id: String(appointmentId) }
         : booking;
+
+      queryClient.invalidateQueries({ queryKey: ["patientAppointments", patientId] });
+      queryClient.invalidateQueries({ queryKey: ["patientDashboard", patientId] });
 
       setConfirmedBooking(storedBooking);
       setStep(5);

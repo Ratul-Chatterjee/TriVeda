@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLatestTreatmentPlan } from "@/hooks/useAppointments";
+import { useTreatmentPlanTimeline } from "@/hooks/useAppointments";
+import { appointmentApi } from "@/api/appointment.api";
 import {
   BarChart,
   Bar,
@@ -711,16 +712,42 @@ export default function AdvancedAyurvedicDietCharts() {
   const [recipeQuestion, setRecipeQuestion] = useState("");
   const [showRecipeAlert, setShowRecipeAlert] = useState(false);
   const [recipeAlertContent, setRecipeAlertContent] = useState<string>("");
+  const [feedbackLoading, setFeedbackLoading] = useState<"working" | "not_effective" | "terminate_request" | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
 
   const user = JSON.parse(localStorage.getItem("triveda_user") || "{}");
   const portal = String(user?.portal || "").toUpperCase();
   const role = String(user?.role || "").toUpperCase();
   const isPatientSession = portal === "PATIENT" || role === "PATIENT";
   const patientId = isPatientSession ? String(user?.id || user?.patientId || "") : "";
-  const { data, isLoading, isError, error } = useLatestTreatmentPlan(patientId);
+  const {
+    data: timelineData,
+    isLoading,
+    isError,
+    error,
+  } = useTreatmentPlanTimeline(patientId);
 
-  // apiClient already unwraps ApiResponse -> this `data` is the treatment plan payload.
-  const treatmentPlan = data as any;
+  const plans = useMemo(() => {
+    const payload = timelineData as any;
+    return Array.isArray(payload?.plans) ? payload.plans : [];
+  }, [timelineData]);
+
+  const activePlanFromTimeline = useMemo(() => {
+    const payload = timelineData as any;
+    return payload?.activePlan || plans[0] || null;
+  }, [timelineData, plans]);
+
+  useEffect(() => {
+    if (!selectedPlanId && activePlanFromTimeline?.id) {
+      setSelectedPlanId(String(activePlanFromTimeline.id));
+    }
+  }, [activePlanFromTimeline, selectedPlanId]);
+
+  const treatmentPlan = useMemo(() => {
+    if (!plans.length) return activePlanFromTimeline as any;
+    if (!selectedPlanId) return activePlanFromTimeline as any;
+    return plans.find((plan: any) => String(plan.id) === selectedPlanId) || (activePlanFromTimeline as any);
+  }, [activePlanFromTimeline, plans, selectedPlanId]);
   const dietItems = treatmentPlan?.dietPlan?.items || [];
 
   const mealTimeLabels: Record<string, string> = {
@@ -750,29 +777,89 @@ export default function AdvancedAyurvedicDietCharts() {
     "LUNCH",
     "EVENING",
     "DINNER",
-    "OTHER",
   ];
+
+  const parseStructuredDietNote = (rawNote: string) => {
+    const raw = String(rawNote || "").trim();
+    if (!raw || !raw.includes("=")) {
+      return {
+        slotLabel: "",
+        timing: "",
+        portion: "",
+        note: raw,
+      };
+    }
+
+    const meta: Record<string, string> = {};
+    raw.split(";").forEach((segment) => {
+      const [key, ...valueParts] = segment.split("=");
+      const normalizedKey = String(key || "").trim().toLowerCase();
+      const normalizedValue = valueParts.join("=").trim();
+      if (normalizedKey) {
+        meta[normalizedKey] = normalizedValue;
+      }
+    });
+
+    return {
+      slotLabel: meta.slot || "",
+      timing: meta.time || "",
+      portion: meta.portion || "",
+      note: meta.note || "",
+    };
+  };
 
   const groupedDietItems = useMemo(() => {
     const groups = new Map<string, { pathya: string[]; apathya: string[]; notes: string[] }>();
+    const customGroups = new Map<
+      string,
+      { label: string; time: string; pathya: string[]; apathya: string[]; notes: string[] }
+    >();
 
     (dietItems || []).forEach((item: any) => {
       const key = String(item?.mealTime || "OTHER");
+
+      if (key === "OTHER") {
+        const itemName = String(item?.itemName || "").trim();
+        const rawNotes = String(item?.notes || "").trim();
+        const parsed = parseStructuredDietNote(rawNotes);
+        const noteText = parsed.note || rawNotes;
+        const label = parsed.slotLabel || itemName || `Custom Slot ${customGroups.size + 1}`;
+        const customTime = parsed.timing || "--";
+        const customKey = `${label.toLowerCase()}|${customTime.toLowerCase()}`;
+
+        if (!customGroups.has(customKey)) {
+          customGroups.set(customKey, { label, time: customTime, pathya: [], apathya: [], notes: [] });
+        }
+
+        const customEntry = customGroups.get(customKey)!;
+        if (item?.isAvoid) {
+          customEntry.apathya.push(itemName);
+        } else {
+          customEntry.pathya.push(itemName);
+        }
+        if (noteText) {
+          customEntry.notes.push(noteText);
+        }
+        return;
+      }
+
       if (!groups.has(key)) {
         groups.set(key, { pathya: [], apathya: [], notes: [] });
       }
       const entry = groups.get(key)!;
+      const parsed = parseStructuredDietNote(String(item?.notes || ""));
+      const noteText = parsed.note || String(item?.notes || "").trim();
       if (item?.isAvoid) {
         entry.apathya.push(String(item?.itemName || "").trim());
       } else {
         entry.pathya.push(String(item?.itemName || "").trim());
       }
-      if (item?.notes) {
-        entry.notes.push(String(item.notes));
+      if (noteText) {
+        entry.notes.push(noteText);
       }
     });
 
-    return mealOrder
+    const regularMeals = mealOrder
       .filter((mealKey) => groups.has(mealKey))
       .map((mealKey) => {
         const entry = groups.get(mealKey)!;
@@ -789,7 +876,26 @@ export default function AdvancedAyurvedicDietCharts() {
           calories: Math.max(0, pathyaFoods.length * 80),
           constitution: apathyaFoods.length > 0 ? "Pathya + Apathya" : "Pathya",
         };
-      })
+      });
+
+    const customMeals = Array.from(customGroups.values()).map((entry, index) => {
+      const pathyaFoods = entry.pathya.filter(Boolean);
+      const apathyaFoods = entry.apathya.filter(Boolean);
+
+      return {
+        meal: entry.label,
+        mealKey: `CUSTOM_${index}`,
+        time: entry.time || "--",
+        pathyaFoods,
+        apathyaFoods,
+        foods: [...pathyaFoods, ...apathyaFoods],
+        rationale: entry.notes[0] || "Doctor-prescribed dietary guidance.",
+        calories: Math.max(0, pathyaFoods.length * 80),
+        constitution: apathyaFoods.length > 0 ? "Pathya + Apathya" : "Pathya",
+      };
+    });
+
+    return [...regularMeals, ...customMeals]
       .filter((meal) => meal.pathyaFoods.length > 0 || meal.apathyaFoods.length > 0);
   }, [dietItems]);
 
@@ -818,6 +924,31 @@ export default function AdvancedAyurvedicDietCharts() {
   };
 
   const hasDietPlan = Boolean(treatmentPlan?.dietPlan && groupedDietItems.length > 0);
+
+  const submitDietFeedback = async (feedbackType: "working" | "not_effective" | "terminate_request") => {
+    if (!patientId || !treatmentPlan?.id) return;
+    try {
+      setFeedbackLoading(feedbackType);
+      await appointmentApi.submitTreatmentPlanFeedback(patientId, {
+        treatmentPlanId: treatmentPlan.id,
+        planType: "diet",
+        feedbackType,
+        message:
+          feedbackType === "working"
+            ? "Patient reports diet plan is working well."
+            : feedbackType === "not_effective"
+              ? "Patient reports diet plan is not effective enough."
+              : "Patient requests doctor review for diet plan termination.",
+      });
+      setShowAlert(true);
+      setAlertContent({
+        title: "Doctor notified",
+        message: "Your update has been sent to your doctor for review.",
+      });
+    } finally {
+      setFeedbackLoading(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -982,6 +1113,26 @@ export default function AdvancedAyurvedicDietCharts() {
             <span className="px-3 sm:px-4 py-1.5 bg-gradient-to-r from-emerald-100 to-emerald-200 text-[#1F5C3F] rounded-full text-xs sm:text-sm font-medium border border-emerald-300">
               Vata-Pitta Constitution
             </span>
+            {plans.length > 0 && (
+              <select
+                value={selectedPlanId || String(activePlanFromTimeline?.id || "")}
+                onChange={(event) => setSelectedPlanId(event.target.value)}
+                className="px-3 sm:px-4 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-full text-xs sm:text-sm font-medium"
+              >
+                {plans.map((plan: any) => {
+                  const scheduledDate = plan?.appointment?.scheduledAt
+                    ? new Date(plan.appointment.scheduledAt).toLocaleDateString("en-CA")
+                    : "Unknown date";
+                  const doctorName = plan?.doctor?.name || "Doctor";
+                  const status = String(plan?.computedStatus || "LEGACY").toUpperCase();
+                  return (
+                    <option key={plan.id} value={String(plan.id)}>
+                      {doctorName} - {scheduledDate} - {status}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
           </div>
         </motion.div>
 
@@ -1474,6 +1625,39 @@ export default function AdvancedAyurvedicDietCharts() {
                   isLast={idx === arr.length - 1}
                 />
               ))}
+          </div>
+        </motion.div>
+
+        <motion.div className="mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">Diet Plan Feedback</h3>
+          <p className="text-sm text-slate-600 mb-4">
+            Keep your doctor updated if the diet is helping, not helping, or needs termination review.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => submitDietFeedback("working")}
+              disabled={feedbackLoading !== null}
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+            >
+              {feedbackLoading === "working" ? "Sending..." : "Diet Working"}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitDietFeedback("not_effective")}
+              disabled={feedbackLoading !== null}
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+            >
+              {feedbackLoading === "not_effective" ? "Sending..." : "Diet Not Effective"}
+            </button>
+            <button
+              type="button"
+              onClick={() => submitDietFeedback("terminate_request")}
+              disabled={feedbackLoading !== null}
+              className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+            >
+              {feedbackLoading === "terminate_request" ? "Sending..." : "Request Diet Termination Review"}
+            </button>
           </div>
         </motion.div>
 

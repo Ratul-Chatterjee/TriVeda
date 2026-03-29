@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { Calendar, Clock, Download, FileText, Plus, X } from "lucide-react";
 import { usePatientAppointments } from "@/hooks/useAppointments";
 import { appointmentApi } from "@/api/appointment.api";
@@ -218,9 +219,28 @@ const shortAppointmentRef = (id: string) => `APT-${id.slice(0, 8).toUpperCase()}
 
 export default function PatientAppointmentsMain() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
-  const patientId = loggedInUser?.id || "";
+  const normalizedPortal = String(loggedInUser?.portal || "").trim().toUpperCase();
+  const normalizedRole = String(loggedInUser?.role || "").trim().toUpperCase();
+  const rawPatientId = String(loggedInUser?.id || "").trim();
+  const rememberedPatientId =
+    typeof window !== "undefined"
+      ? String(window.sessionStorage.getItem("patient:active-id") || "").trim()
+      : "";
+  const isPatientSession =
+    normalizedPortal === "PATIENT" ||
+    normalizedRole === "PATIENT" ||
+    (!!rawPatientId && normalizedRole !== "DOCTOR" && normalizedRole !== "ADMIN");
+  const patientId = isPatientSession ? (rawPatientId || rememberedPatientId) : "";
   const patientName = loggedInUser?.name || "Patient";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (rawPatientId) {
+      window.sessionStorage.setItem("patient:active-id", rawPatientId);
+    }
+  }, [rawPatientId]);
 
   const { data, isLoading, refetch } = usePatientAppointments(patientId);
   const appointments: DbAppointment[] = Array.isArray(data) ? data : [];
@@ -325,6 +345,9 @@ export default function PatientAppointmentsMain() {
         date: rescheduleDate,
         time: rescheduleTime,
       });
+      queryClient.invalidateQueries({ queryKey: ["patientAppointments", patientId] });
+      queryClient.invalidateQueries({ queryKey: ["patientDashboard", patientId] });
+      queryClient.invalidateQueries({ queryKey: ["patientTreatmentPlan", patientId] });
       await refetch();
       setEditingAppointmentId(null);
       setRescheduleDate("");
@@ -343,6 +366,9 @@ export default function PatientAppointmentsMain() {
     try {
       setActionLoadingId(appointmentId);
       await appointmentApi.cancelPatientAppointment(patientId, appointmentId);
+      queryClient.invalidateQueries({ queryKey: ["patientAppointments", patientId] });
+      queryClient.invalidateQueries({ queryKey: ["patientDashboard", patientId] });
+      queryClient.invalidateQueries({ queryKey: ["patientTreatmentPlan", patientId] });
       await refetch();
       if (editingAppointmentId === appointmentId) {
         setEditingAppointmentId(null);

@@ -14,6 +14,8 @@ import {
   reschedulePatientAppointment,
   cancelPatientAppointment,
   getPatientDashboardData,
+  getPatientTreatmentPlanTimeline,
+  submitPatientTreatmentPlanFeedback,
   savePrakritiAssessment,
   getPatientPrakritiAssessments,
 } from "../controllers/appointment.controller.js";
@@ -33,6 +35,8 @@ router.get("/doctor/:doctorId/patients", getDoctorPatients);
 router.get("/doctor/:doctorId", getDoctorAppointments);
 router.get("/patient/:patientId", getPatientAppointments);
 router.get('/patient/:patientId/treatment-plan', getLatestTreatmentPlan);
+router.get('/patient/:patientId/treatment-plan/timeline', getPatientTreatmentPlanTimeline);
+router.post('/patient/:patientId/treatment-plan/feedback', submitPatientTreatmentPlanFeedback);
 router.put("/patient/:patientId/:appointmentId/reschedule", reschedulePatientAppointment);
 router.delete("/patient/:patientId/:appointmentId", cancelPatientAppointment);
 router.get("/patient/:patientId/dashboard", getPatientDashboardData);

@@ -9,6 +9,14 @@ export const useDoctorAppointments = (doctorId: string) => {
     queryKey: ["appointments", "doctor", doctorId],
     queryFn: () => appointmentApi.getDoctorAppointments(doctorId),
     enabled: !!doctorId, // Only run the query if doctorId is provided
+    staleTime: 0,
+    gcTime: 60 * 60 * 1000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 30 * 1000,
+    retry: 2,
+    placeholderData: (previous) => previous,
   });
 };
 
@@ -57,6 +65,10 @@ export const useSaveDoctorPlan = () => {
     onSuccess: () => {
       // MAGIC: This tells React Query to automatically refresh the doctor's dashboard!
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorPatients"] });
+      queryClient.invalidateQueries({ queryKey: ["patientAppointments"] });
+      queryClient.invalidateQueries({ queryKey: ["patientDashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["patientTreatmentPlan"] });
       toast({ title: "Success", description: "Treatment plan saved." });
     },
     onError: (error: Error) => {
@@ -77,6 +89,8 @@ export const useSetAppointmentLive = () => {
     mutationFn: (appointmentId: string) => appointmentApi.setAppointmentLive(appointmentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["patientAppointments"] });
+      queryClient.invalidateQueries({ queryKey: ["patientDashboard"] });
     },
     onError: (error: Error) => {
       toast({
@@ -93,6 +107,14 @@ export const usePatientAppointments = (patientId: string) => {
     queryKey: ["patientAppointments", patientId],
     queryFn: () => appointmentApi.getPatientAppointments(patientId),
     enabled: !!patientId, // Only run if we actually have a logged-in patient ID
+    staleTime: 0,
+    gcTime: 60 * 60 * 1000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 30 * 1000,
+    retry: 2,
+    placeholderData: (previous) => previous,
   });
 };
 
@@ -101,6 +123,14 @@ export const usePatientDashboard = (patientId: string) => {
     queryKey: ["patientDashboard", patientId],
     queryFn: () => appointmentApi.getPatientDashboard(patientId),
     enabled: !!patientId,
+    staleTime: 0,
+    gcTime: 60 * 60 * 1000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 30 * 1000,
+    retry: 2,
+    placeholderData: (previous) => previous,
   });
 };
 
@@ -109,6 +139,18 @@ export const useLatestTreatmentPlan = (patientId: string) => {
     queryKey: ["patientTreatmentPlan", patientId],
     queryFn: () => appointmentApi.getLatestTreatmentPlan(patientId),
     enabled: !!patientId,
+  });
+};
+
+export const useTreatmentPlanTimeline = (patientId: string) => {
+  return useQuery({
+    queryKey: ["patientTreatmentPlanTimeline", patientId],
+    queryFn: () => appointmentApi.getTreatmentPlanTimeline(patientId),
+    enabled: !!patientId,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 };
 

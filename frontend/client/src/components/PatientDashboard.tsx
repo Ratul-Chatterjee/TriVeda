@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { usePatientDashboard } from "@/hooks/useAppointments";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
@@ -222,6 +222,49 @@ type DailyScheduleItem = {
   instruction: string;
 };
 
+const defaultDailySchedule: DailyScheduleItem[] = [
+  { time: "06:00", label: "Morning Pranayama", icon: Wind, category: "yoga", color: "emerald", instruction: "Anulom Vilom breathing - 15 mins" },
+  { time: "07:00", label: "Yoga Session", icon: SunIcon, category: "yoga", color: "teal", instruction: "As prescribed by Dr. Suresh Iyer" },
+  { time: "08:00", label: "Breakfast", icon: CoffeeIcon, category: "meal", color: "amber", instruction: "Warm Oat Porridge, Fresh Berries, Herbal Tea" },
+  { time: "09:00", label: "Morning Medication", icon: Pill, category: "medicine", color: "blue", instruction: "Ashwagandha Capsules - 500mg" },
+  { time: "12:30", label: "Lunch", icon: Salad, category: "meal", color: "lime", instruction: "Quinoa Bowl, Steamed Vegetables, Turmeric Rice" },
+  { time: "18:00", label: "Evening Oil", icon: Droplets, category: "medicine", color: "purple", instruction: "Brahmi Oil - 5 drops on scalp" },
+  { time: "19:30", label: "Evening Walk", icon: Activity, category: "yoga", color: "green", instruction: "20-min gentle walk in fresh air" },
+  { time: "20:00", label: "Dinner", icon: Utensils, category: "meal", color: "orange", instruction: "Lentil Soup, Sauteed Greens, Chamomile Tea" },
+  { time: "21:30", label: "Night Medication", icon: Pill, category: "medicine", color: "indigo", instruction: "Triphala Churna - 1 tsp (Before Sleep)" },
+  { time: "22:00", label: "Meditation", icon: MoonIcon, category: "yoga", color: "violet", instruction: "Guided meditation before sleep - 10 mins" },
+];
+
+const normalizeTimeTo24Hour = (rawTime: unknown, fallback = "12:00") => {
+  const value = String(rawTime || "").trim();
+  if (!value) return fallback;
+
+  const twelveHour = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hour = Number(twelveHour[1]);
+    const minute = Number(twelveHour[2]);
+    const period = twelveHour[3].toUpperCase();
+    if (period === "PM" && hour < 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  const twentyFourHour = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (twentyFourHour) {
+    const hour = Math.max(0, Math.min(23, Number(twentyFourHour[1])));
+    const minute = Math.max(0, Math.min(59, Number(twentyFourHour[2])));
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  return fallback;
+};
+
+const timeToMinutes = (time: string) => {
+  const normalized = normalizeTimeTo24Hour(time, "00:00");
+  const [hour, minute] = normalized.split(":").map((part) => Number(part));
+  return hour * 60 + minute;
+};
+
 export default function AyurvedicPatientDashboard() {
   const [activeTab, setActiveTab] = useState(0);
   const [showPrakritiModal, setShowPrakritiModal] = useState(false);
@@ -232,18 +275,100 @@ export default function AyurvedicPatientDashboard() {
   const [, setLocation] = useLocation();
 
   const loggedInUser = JSON.parse(localStorage.getItem('triveda_user') || '{}');
-  const isPatientSession = loggedInUser?.portal === 'PATIENT' || loggedInUser?.role === 'PATIENT';
-  const patientId = isPatientSession ? loggedInUser?.id || "" : "";
+  const normalizedPortal = String(loggedInUser?.portal || "").trim().toUpperCase();
+  const normalizedRole = String(loggedInUser?.role || "").trim().toUpperCase();
+  const sessionPatientId = String(loggedInUser?.id || "").trim();
+  const isPatientSession =
+    normalizedPortal === 'PATIENT' ||
+    normalizedRole === 'PATIENT' ||
+    (!!sessionPatientId && normalizedRole !== 'DOCTOR' && normalizedRole !== 'ADMIN');
+  const rememberedPatientId =
+    typeof window !== "undefined"
+      ? String(window.sessionStorage.getItem("patient:active-id") || "").trim()
+      : "";
+  const patientId = isPatientSession ? (sessionPatientId || rememberedPatientId) : "";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (sessionPatientId) {
+      window.sessionStorage.setItem("patient:active-id", sessionPatientId);
+    }
+  }, [sessionPatientId]);
 
   const { data: dashboardData, isLoading } = usePatientDashboard(patientId);
-  const dashboardPayload: any = dashboardData || {};
+  const liveDashboardPayload: any = dashboardData || {};
+  const snapshotKey = patientId ? `patient:dashboard-snapshot:${patientId}` : "";
+  const snapshotDashboardPayload = useMemo(() => {
+    if (typeof window === "undefined" || !snapshotKey) return null;
+    try {
+      const raw = window.sessionStorage.getItem(snapshotKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [snapshotKey]);
 
-  const patient: typeof initialPatient = dashboardPayload.patient || initialPatient;
-  const dietChart: typeof initialDietChart =
-    dashboardPayload.dietChart || initialDietChart;
-  const appointments: Array<typeof initialAppointments[number]> = (
-    dashboardPayload.appointments || initialAppointments
-  ).map(
+  const hasLiveDashboardData =
+    Boolean(patientId) &&
+    Boolean(liveDashboardPayload && Object.keys(liveDashboardPayload).length > 0);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !snapshotKey || !hasLiveDashboardData) return;
+    window.sessionStorage.setItem(snapshotKey, JSON.stringify(liveDashboardPayload));
+  }, [hasLiveDashboardData, liveDashboardPayload, snapshotKey]);
+
+  const dashboardPayload: any = hasLiveDashboardData
+    ? liveDashboardPayload
+    : snapshotDashboardPayload || {};
+
+  const hasRenderableDashboardData = Boolean(
+    dashboardPayload && Object.keys(dashboardPayload).length > 0
+  );
+
+  const patientSessionFallback: typeof initialPatient = {
+    ...initialPatient,
+    id: String(loggedInUser?.id || initialPatient.id),
+    name: String(loggedInUser?.name || initialPatient.name),
+    age: Number(loggedInUser?.age ?? initialPatient.age),
+    constitution: String(loggedInUser?.prakriti || initialPatient.constitution),
+    avatar: String(loggedInUser?.name || initialPatient.name)
+      .split(" ")
+      .slice(0, 2)
+      .map((part: string) => part[0] || "")
+      .join("")
+      .toUpperCase() || initialPatient.avatar,
+  };
+
+  const patient: typeof initialPatient = hasRenderableDashboardData
+    ? {
+        ...initialPatient,
+        ...(dashboardPayload.patient || {}),
+      }
+    : isPatientSession
+      ? patientSessionFallback
+      : initialPatient;
+
+  const dietChart: typeof initialDietChart = hasRenderableDashboardData
+    ? {
+        ...initialDietChart,
+        ...(dashboardPayload.dietChart || {}),
+      }
+    : isPatientSession
+      ? {
+          ...initialDietChart,
+          meals: { breakfast: [], lunch: [], dinner: [] },
+        }
+      : initialDietChart;
+
+  const rawAppointments: Array<any> = hasRenderableDashboardData
+    ? Array.isArray(dashboardPayload.appointments)
+      ? dashboardPayload.appointments
+      : []
+    : isPatientSession
+      ? []
+      : initialAppointments;
+
+  const appointments: Array<typeof initialAppointments[number]> = rawAppointments.map(
     (appointment: any, index: number) => ({
       ...appointment,
       id:
@@ -266,15 +391,23 @@ export default function AyurvedicPatientDashboard() {
   >({});
   
   const healthRecords: Array<typeof initialHealthRecords[number]> =
-    dashboardPayload.healthRecords?.length > 0
+    hasRenderableDashboardData && dashboardPayload.healthRecords?.length > 0
       ? dashboardPayload.healthRecords
-      : initialHealthRecords;
+      : isPatientSession
+        ? []
+        : initialHealthRecords;
   const medications: Array<typeof initialMedications[number]> =
-    dashboardPayload.medications?.length > 0
+    hasRenderableDashboardData && dashboardPayload.medications?.length > 0
       ? dashboardPayload.medications
-      : initialMedications;
+      : isPatientSession
+        ? []
+        : initialMedications;
   const goals: Array<typeof initialGoals[number]> =
-    dashboardPayload.goals?.length > 0 ? dashboardPayload.goals : initialGoals;
+    hasRenderableDashboardData && dashboardPayload.goals?.length > 0
+      ? dashboardPayload.goals
+      : isPatientSession
+        ? []
+        : initialGoals;
   const [selectedGoal, setSelectedGoal] = useState<typeof initialGoals[number] | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalFilter, setGoalFilter] = useState<"all" | "health" | "mental" | "fitness">("all");
@@ -295,38 +428,113 @@ export default function AyurvedicPatientDashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  const dailySchedule: DailyScheduleItem[] =
-    dashboardPayload.dailySchedule?.length > 0
-      ? dashboardPayload.dailySchedule.map((item: any) => ({
-          time: item.time,
-          label: item.label,
+  const dailySchedule: DailyScheduleItem[] = useMemo(() => {
+    const explicitSchedule = Array.isArray(dashboardPayload?.dailySchedule)
+      ? dashboardPayload.dailySchedule
+      : [];
+
+    if (hasRenderableDashboardData && explicitSchedule.length > 0) {
+      return explicitSchedule
+        .map((item: any) => ({
+          time: normalizeTimeTo24Hour(item?.time, "12:00"),
+          label: String(item?.label || "Scheduled Activity"),
           icon:
-            item.category === "meal"
+            item?.category === "meal"
               ? Utensils
-              : item.category === "medicine"
+              : item?.category === "medicine"
                 ? Pill
                 : Wind,
-          category: item.category,
-          color: item.color || "emerald",
-          instruction: item.instruction,
+          category: String(item?.category || "routine"),
+          color: String(item?.color || "emerald"),
+          instruction: String(item?.instruction || "Follow doctor guidance."),
         }))
-      : [
-          { time: "06:00", label: "Morning Pranayama", icon: Wind, category: "yoga", color: "emerald", instruction: "Anulom Vilom breathing — 15 mins" },
-          { time: "07:00", label: "Yoga Session", icon: SunIcon, category: "yoga", color: "teal", instruction: "As prescribed by Dr. Suresh Iyer" },
-          { time: "08:00", label: "Breakfast", icon: CoffeeIcon, category: "meal", color: "amber", instruction: "Warm Oat Porridge, Fresh Berries, Herbal Tea" },
-          { time: "09:00", label: "Morning Medication", icon: Pill, category: "medicine", color: "blue", instruction: "Ashwagandha Capsules — 500mg" },
-          { time: "12:30", label: "Lunch", icon: Salad, category: "meal", color: "lime", instruction: "Quinoa Bowl, Steamed Vegetables, Turmeric Rice" },
-          { time: "18:00", label: "Evening Oil", icon: Droplets, category: "medicine", color: "purple", instruction: "Brahmi Oil — 5 drops on scalp" },
-          { time: "19:30", label: "Evening Walk", icon: Activity, category: "yoga", color: "green", instruction: "20-min gentle walk in fresh air" },
-          { time: "20:00", label: "Dinner", icon: Utensils, category: "meal", color: "orange", instruction: "Lentil Soup, Sautéed Greens, Chamomile Tea" },
-          { time: "21:30", label: "Night Medication", icon: Pill, category: "medicine", color: "indigo", instruction: "Triphala Churna — 1 tsp (Before Sleep)" },
-          { time: "22:00", label: "Meditation", icon: MoonIcon, category: "yoga", color: "violet", instruction: "Guided meditation before sleep — 10 mins" },
-        ];
+        .sort((a: DailyScheduleItem, b: DailyScheduleItem) => timeToMinutes(a.time) - timeToMinutes(b.time));
+    }
+
+    const generated: DailyScheduleItem[] = [];
+
+    const meals = (dietChart as any)?.meals;
+    if (meals && typeof meals === "object") {
+      if (Array.isArray(meals.breakfast) && meals.breakfast.length > 0) {
+        generated.push({
+          time: "08:00",
+          label: "Breakfast",
+          icon: CoffeeIcon,
+          category: "meal",
+          color: "amber",
+          instruction: meals.breakfast.join(", "),
+        });
+      }
+      if (Array.isArray(meals.lunch) && meals.lunch.length > 0) {
+        generated.push({
+          time: "12:30",
+          label: "Lunch",
+          icon: Salad,
+          category: "meal",
+          color: "lime",
+          instruction: meals.lunch.join(", "),
+        });
+      }
+      if (Array.isArray(meals.dinner) && meals.dinner.length > 0) {
+        generated.push({
+          time: "20:00",
+          label: "Dinner",
+          icon: Utensils,
+          category: "meal",
+          color: "orange",
+          instruction: meals.dinner.join(", "),
+        });
+      }
+    }
+
+    medications.forEach((medication: any, index: number) => {
+      const name = String(medication?.name || medication?.medicineName || "Medication").trim();
+      const dosage = String(medication?.dose || medication?.dosage || "").trim();
+      const timing = normalizeTimeTo24Hour(
+        medication?.time || medication?.timing,
+        index === 0 ? "09:00" : index === 1 ? "18:00" : "21:30"
+      );
+      const details = [name, dosage].filter(Boolean).join(" - ");
+
+      generated.push({
+        time: timing,
+        label: `${name} Intake`,
+        icon: Pill,
+        category: "medicine",
+        color: "blue",
+        instruction: details || "Take as prescribed by your doctor.",
+      });
+    });
+
+    const today = new Date().toISOString().split("T")[0];
+    appointments
+      .filter((appointment: any) => appointment?.date === today && appointment?.status !== "cancelled")
+      .forEach((appointment: any) => {
+        generated.push({
+          time: normalizeTimeTo24Hour(appointment?.time, "10:00"),
+          label: `Consultation with ${String(appointment?.doctor || "Doctor")}`,
+          icon: Calendar,
+          category: "appointment",
+          color: "teal",
+          instruction: `${String(appointment?.specialty || "Consultation")} at ${String(appointment?.location || "Clinic")}`,
+        });
+      });
+
+    const deduped = generated.filter(
+      (item, index, array) =>
+        array.findIndex((candidate) => candidate.time === item.time && candidate.label === item.label) === index
+    );
+
+    if (deduped.length > 0) {
+      return deduped.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+    }
+
+    return isPatientSession ? [] : defaultDailySchedule;
+  }, [appointments, dashboardPayload?.dailySchedule, dietChart, hasRenderableDashboardData, isPatientSession, medications]);
 
   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
   const upcomingActivities = dailySchedule.filter((item: DailyScheduleItem) => {
-    const [h, m] = item.time.split(':').map(Number);
-    return (h * 60 + m) >= currentMinutes;
+    return timeToMinutes(item.time) >= currentMinutes;
   });
 
   // Appointment Modal Component

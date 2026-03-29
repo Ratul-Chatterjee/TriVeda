@@ -71,6 +71,88 @@ const parseDurationDays = (medication, index) => {
   return Math.round(parsed);
 };
 
+const allowedPlanTypes = new Set(["diet", "asanas", "medicines"]);
+const allowedFeedbackTypes = new Set([
+  "working",
+  "not_effective",
+  "terminate_request",
+  "stopped",
+]);
+
+const parseDateOrNull = (value, fieldName) => {
+  const asString = toSafeString(value, fieldName, 100);
+  if (!asString) return null;
+  const parsed = new Date(asString);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ApiError(400, `${fieldName} must be a valid date.`);
+  }
+  return parsed.toISOString();
+};
+
+const normalizePlanLifecycle = (rawLifecycle) => {
+  if (!rawLifecycle) return null;
+  if (typeof rawLifecycle !== "object") {
+    throw new ApiError(400, "planLifecycle must be an object.");
+  }
+
+  const normalizeDomain = (domainKey) => {
+    const domainRaw = rawLifecycle?.[domainKey];
+    if (!domainRaw) {
+      return {
+        stopConditions: "",
+        reviewCadenceDays: null,
+        patientGuidance: "",
+        status: "ACTIVE",
+      };
+    }
+
+    if (typeof domainRaw !== "object") {
+      throw new ApiError(400, `planLifecycle.${domainKey} must be an object.`);
+    }
+
+    const cadenceRaw = Number(domainRaw.reviewCadenceDays);
+    const reviewCadenceDays = Number.isFinite(cadenceRaw) && cadenceRaw > 0
+      ? Math.trunc(cadenceRaw)
+      : null;
+
+    const status = toSafeString(domainRaw.status, `planLifecycle.${domainKey}.status`, 60).toUpperCase() || "ACTIVE";
+
+    return {
+      stopConditions: toSafeString(domainRaw.stopConditions, `planLifecycle.${domainKey}.stopConditions`, 4000),
+      reviewCadenceDays,
+      patientGuidance: toSafeString(domainRaw.patientGuidance, `planLifecycle.${domainKey}.patientGuidance`, 4000),
+      status,
+    };
+  };
+
+  const feedbackSettingsRaw = rawLifecycle?.feedbackSettings;
+  if (feedbackSettingsRaw !== undefined && feedbackSettingsRaw !== null && typeof feedbackSettingsRaw !== "object") {
+    throw new ApiError(400, "planLifecycle.feedbackSettings must be an object.");
+  }
+
+  return {
+    effectiveFrom: parseDateOrNull(rawLifecycle.effectiveFrom, "planLifecycle.effectiveFrom"),
+    effectiveTo: parseDateOrNull(rawLifecycle.effectiveTo, "planLifecycle.effectiveTo"),
+    overallStatus: toSafeString(rawLifecycle.overallStatus, "planLifecycle.overallStatus", 60).toUpperCase() || "ACTIVE",
+    diet: normalizeDomain("diet"),
+    asanas: normalizeDomain("asanas"),
+    medicines: normalizeDomain("medicines"),
+    feedbackSettings: {
+      notifyOnWorking: Boolean(feedbackSettingsRaw?.notifyOnWorking),
+      notifyOnNotEffective: Boolean(feedbackSettingsRaw?.notifyOnNotEffective),
+      notifyOnTerminateRequest: Boolean(feedbackSettingsRaw?.notifyOnTerminateRequest),
+    },
+    feedbackEvents: Array.isArray(rawLifecycle.feedbackEvents) ? rawLifecycle.feedbackEvents : [],
+    doctorAlerts: Array.isArray(rawLifecycle.doctorAlerts) ? rawLifecycle.doctorAlerts : [],
+  };
+};
+
+const derivePlanStatus = (treatmentPlan) => {
+  const lifecycle = treatmentPlan?.diagnosis?.planLifecycle;
+  if (lifecycle?.overallStatus) return String(lifecycle.overallStatus).toUpperCase();
+  return treatmentPlan?.isCompleted ? "COMPLETED" : "ACTIVE";
+};
+
 const normalizeDoctorPlanPayload = (payload) => {
   const doctorNotes = toSafeString(payload?.doctorNotes, "doctorNotes", 5000);
 
@@ -113,8 +195,24 @@ const normalizeDoctorPlanPayload = (payload) => {
         items: toStringArray(dietInput.items, "dietChart.items"),
         pathya: toStringArray(dietInput.pathya, "dietChart.pathya"),
         apathya: toStringArray(dietInput.apathya, "dietChart.apathya"),
+        selectedFoods: Array.isArray(dietInput.selectedFoods)
+          ? dietInput.selectedFoods.map((entry, index) => {
+              if (!entry || typeof entry !== "object") {
+                throw new ApiError(400, `dietChart.selectedFoods[${index}] must be an object.`);
+              }
+
+              return {
+                name: toSafeString(entry.name, `dietChart.selectedFoods[${index}].name`, 180),
+                mealType: toSafeString(entry.mealType, `dietChart.selectedFoods[${index}].mealType`, 120),
+                timing: toSafeString(entry.timing, `dietChart.selectedFoods[${index}].timing`, 120),
+                portion: toSafeString(entry.portion, `dietChart.selectedFoods[${index}].portion`, 120),
+                notes: toSafeString(entry.notes, `dietChart.selectedFoods[${index}].notes`, 2000),
+                isAvoid: Boolean(entry.isAvoid),
+              };
+            })
+          : [],
       }
-    : { items: [], pathya: [], apathya: [] };
+    : { items: [], pathya: [], apathya: [], selectedFoods: [] };
 
   const routineInput = payload?.routinePlan;
   if (
@@ -201,6 +299,8 @@ const normalizeDoctorPlanPayload = (payload) => {
     })
     .filter(Boolean);
 
+  const planLifecycle = normalizePlanLifecycle(payload?.planLifecycle);
+
   const isCompleted = Boolean(payload?.isCompleted);
 
   return {
@@ -209,6 +309,7 @@ const normalizeDoctorPlanPayload = (payload) => {
     dietChart,
     routinePlan,
     medications,
+    planLifecycle,
     isCompleted,
   };
 };
@@ -229,6 +330,44 @@ const normalizeMealTime = (value = "") => {
 
 const buildDietItemsFromChart = (dietChart) => {
   const entries = [];
+
+  const formatStructuredNote = ({ slotLabel = "", timing = "", notes = "", portion = "" }) => {
+    const normalizedSlot = String(slotLabel || "").trim();
+    const normalizedTiming = String(timing || "").trim();
+    const normalizedNotes = String(notes || "").trim();
+    const normalizedPortion = String(portion || "").trim();
+
+    const parts = [
+      `slot=${normalizedSlot}`,
+      `time=${normalizedTiming}`,
+      `portion=${normalizedPortion}`,
+      `note=${normalizedNotes}`,
+    ];
+
+    return parts.join(";");
+  };
+
+  if (Array.isArray(dietChart?.selectedFoods) && dietChart.selectedFoods.length > 0) {
+    dietChart.selectedFoods.forEach((entry) => {
+      const itemName = String(entry?.name || "").trim();
+      if (!itemName) return;
+
+      const mealType = String(entry?.mealType || "").trim();
+      const mealTime = normalizeMealTime(mealType);
+
+      entries.push({
+        mealTime,
+        itemName,
+        notes: formatStructuredNote({
+          slotLabel: mealType,
+          timing: entry?.timing,
+          notes: entry?.notes,
+          portion: entry?.portion,
+        }),
+        isAvoid: Boolean(entry?.isAvoid),
+      });
+    });
+  }
 
   const parseMealLine = (line, isAvoid = false, fallbackMealTime = "OTHER") => {
     const raw = String(line || "").trim();
@@ -257,7 +396,9 @@ const buildDietItemsFromChart = (dietChart) => {
       entries.push({
         mealTime,
         itemName,
-        notes: null,
+        notes: splitIndex >= 0
+          ? formatStructuredNote({ slotLabel: raw.slice(0, splitIndex).trim() })
+          : null,
         isAvoid,
       });
     });
@@ -802,6 +943,13 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
   }
 
   const normalized = normalizeDoctorPlanPayload(req.body || {});
+  const diagnosisPayload = normalized.diagnosis
+    ? { ...normalized.diagnosis }
+    : {};
+  if (normalized.planLifecycle) {
+    diagnosisPayload.planLifecycle = normalized.planLifecycle;
+  }
+  const finalDiagnosis = Object.keys(diagnosisPayload).length > 0 ? diagnosisPayload : null;
 
   const appointmentRecord = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -819,7 +967,7 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
       where: { id: appointmentId },
       data: {
         doctorNotes: normalized.doctorNotes,
-        diagnosis: normalized.diagnosis,
+        diagnosis: finalDiagnosis,
         dietChart: normalized.dietChart,
         routinePlan: normalized.routinePlan,
         medications: normalized.medications,
@@ -835,14 +983,14 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
         patientId: appointmentRecord.patientId,
         doctorId: appointmentRecord.doctorId,
         doctorNotes: normalized.doctorNotes,
-        diagnosis: normalized.diagnosis,
+        diagnosis: finalDiagnosis,
         dietChart: normalized.dietChart,
         routinePlan: normalized.routinePlan,
         isCompleted: normalized.isCompleted,
       },
       update: {
         doctorNotes: normalized.doctorNotes,
-        diagnosis: normalized.diagnosis,
+        diagnosis: finalDiagnosis,
         dietChart: normalized.dietChart,
         routinePlan: normalized.routinePlan,
         isCompleted: normalized.isCompleted,
@@ -909,7 +1057,7 @@ export const getLatestTreatmentPlan = asyncHandler(async (req, res) => {
     throw new ApiError(400, "patientId is required.");
   }
 
-  const treatmentPlan = await prisma.treatmentPlan.findFirst({
+  const treatmentPlans = await prisma.treatmentPlan.findMany({
     where: { patientId },
     orderBy: { createdAt: "desc" },
     include: {
@@ -917,6 +1065,9 @@ export const getLatestTreatmentPlan = asyncHandler(async (req, res) => {
         include: {
           items: true,
         },
+      },
+      medications: {
+        orderBy: { createdAt: "asc" },
       },
       doctor: {
         select: {
@@ -926,13 +1077,208 @@ export const getLatestTreatmentPlan = asyncHandler(async (req, res) => {
     },
   });
 
-  if (!treatmentPlan) {
+  if (treatmentPlans.length === 0) {
     throw new ApiError(404, "No treatment plan found for this patient.");
   }
+
+  const activePlan = treatmentPlans.find((plan) => derivePlanStatus(plan) === "ACTIVE");
+  const treatmentPlan = activePlan || treatmentPlans[0];
 
   return res
     .status(200)
     .json(new ApiResponse(200, treatmentPlan, "Latest treatment plan fetched."));
+});
+
+export const getPatientTreatmentPlanTimeline = asyncHandler(async (req, res) => {
+  const { patientId } = req.params;
+
+  if (!patientId) {
+    throw new ApiError(400, "patientId is required.");
+  }
+
+  const treatmentPlans = await prisma.treatmentPlan.findMany({
+    where: { patientId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      appointment: {
+        select: {
+          id: true,
+          scheduledAt: true,
+          status: true,
+        },
+      },
+      dietPlan: {
+        include: {
+          items: true,
+        },
+      },
+      medications: {
+        orderBy: { createdAt: "asc" },
+      },
+      doctor: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (treatmentPlans.length === 0) {
+    throw new ApiError(404, "No treatment plans found for this patient.");
+  }
+
+  const mappedPlans = treatmentPlans.map((plan) => {
+    const lifecycle = plan?.diagnosis?.planLifecycle || null;
+    return {
+      ...plan,
+      computedStatus: derivePlanStatus(plan),
+      isLegacy: !lifecycle,
+      lifecycle,
+    };
+  });
+
+  const activePlan = mappedPlans.find((plan) => plan.computedStatus === "ACTIVE") || null;
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        activePlan,
+        plans: mappedPlans,
+      },
+      "Treatment plan timeline fetched."
+    )
+  );
+});
+
+export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) => {
+  const { patientId } = req.params;
+  const { treatmentPlanId, planType, feedbackType, message } = req.body || {};
+
+  if (!patientId) {
+    throw new ApiError(400, "patientId is required.");
+  }
+
+  const normalizedPlanType = String(planType || "").trim().toLowerCase();
+  const normalizedFeedbackType = String(feedbackType || "").trim().toLowerCase();
+
+  if (!allowedPlanTypes.has(normalizedPlanType)) {
+    throw new ApiError(400, "planType must be one of: diet, asanas, medicines.");
+  }
+
+  if (!allowedFeedbackTypes.has(normalizedFeedbackType)) {
+    throw new ApiError(400, "feedbackType must be one of: working, not_effective, terminate_request, stopped.");
+  }
+
+  const feedbackMessage = toSafeString(message, "message", 2000);
+
+  const plan = treatmentPlanId
+    ? await prisma.treatmentPlan.findFirst({
+        where: { id: String(treatmentPlanId), patientId },
+        include: {
+          appointment: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      })
+    : await prisma.treatmentPlan.findFirst({
+        where: { patientId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          appointment: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+  if (!plan) {
+    throw new ApiError(404, "Treatment plan not found for this patient.");
+  }
+
+  const diagnosisPayload =
+    plan.diagnosis && typeof plan.diagnosis === "object"
+      ? { ...plan.diagnosis }
+      : {};
+
+  const lifecycle = normalizePlanLifecycle(diagnosisPayload.planLifecycle || {}) || {
+    effectiveFrom: null,
+    effectiveTo: null,
+    overallStatus: "ACTIVE",
+    diet: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+    asanas: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+    medicines: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+    feedbackSettings: {
+      notifyOnWorking: true,
+      notifyOnNotEffective: true,
+      notifyOnTerminateRequest: true,
+    },
+    feedbackEvents: [],
+    doctorAlerts: [],
+  };
+
+  const feedbackEvent = {
+    id: `feedback-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    patientId,
+    doctorId: plan.doctorId,
+    treatmentPlanId: plan.id,
+    appointmentId: plan.appointmentId,
+    planType: normalizedPlanType,
+    feedbackType: normalizedFeedbackType,
+    message: feedbackMessage,
+    readByDoctor: false,
+  };
+
+  lifecycle.feedbackEvents = Array.isArray(lifecycle.feedbackEvents)
+    ? [...lifecycle.feedbackEvents, feedbackEvent]
+    : [feedbackEvent];
+
+  lifecycle.doctorAlerts = Array.isArray(lifecycle.doctorAlerts)
+    ? [...lifecycle.doctorAlerts, { ...feedbackEvent, alertType: "PATIENT_FEEDBACK" }]
+    : [{ ...feedbackEvent, alertType: "PATIENT_FEEDBACK" }];
+
+  const domain = lifecycle[normalizedPlanType] || {};
+  if (normalizedFeedbackType === "working") domain.status = "WORKING";
+  if (normalizedFeedbackType === "not_effective") domain.status = "NOT_EFFECTIVE";
+  if (normalizedFeedbackType === "terminate_request") domain.status = "STOP_REQUESTED";
+  if (normalizedFeedbackType === "stopped") domain.status = "STOPPED";
+  lifecycle[normalizedPlanType] = domain;
+
+  diagnosisPayload.planLifecycle = lifecycle;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.treatmentPlan.update({
+      where: { id: plan.id },
+      data: {
+        diagnosis: diagnosisPayload,
+      },
+    });
+
+    if (plan.appointmentId) {
+      await tx.appointment.update({
+        where: { id: plan.appointmentId },
+        data: {
+          diagnosis: diagnosisPayload,
+        },
+      });
+    }
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        treatmentPlanId: plan.id,
+        feedbackEvent,
+      },
+      "Feedback submitted and doctor notified."
+    )
+  );
 });
 
 export const markAppointmentLive = asyncHandler(async (req, res) => {

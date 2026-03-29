@@ -3,6 +3,8 @@ import { ThemeToggle } from "@/lib/ThemeProvider";
 import { Link, useLocation } from "wouter";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import RestaurantMenuIcon from "@mui/icons-material/RestaurantMenu";
+import SelfImprovementIcon from "@mui/icons-material/SelfImprovement";
+import MedicationIcon from "@mui/icons-material/Medication";
 import PersonIcon from "@mui/icons-material/Person";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import AssessmentIcon from "@mui/icons-material/Assessment";
@@ -127,6 +129,64 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       )}
                       <RestaurantMenuIcon fontSize="small" />
                       <span className="ml-3">My Diet Charts</span>
+                    </motion.div>
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/patient/asanas">
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
+                        location === "/patient/asanas"
+                          ? "font-semibold text-primary"
+                          : ""
+                      }`}
+                    >
+                      {location === "/patient/asanas" && (
+                        <motion.span
+                          layoutId="sidebar-active-indicator"
+                          className="absolute left-0 top-0 h-full w-1 bg-[#1F5C3F] rounded-r"
+                          initial={{ scaleY: 0 }}
+                          animate={{ scaleY: 1 }}
+                          exit={{ scaleY: 0 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 30,
+                          }}
+                        />
+                      )}
+                      <SelfImprovementIcon fontSize="small" />
+                      <span className="ml-3">My Asanas</span>
+                    </motion.div>
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/patient/medicines">
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      className={`flex items-center p-2 rounded-lg relative transition-all duration-200 text-sidebar-foreground hover:bg-sidebar-accent ${
+                        location === "/patient/medicines"
+                          ? "font-semibold text-primary"
+                          : ""
+                      }`}
+                    >
+                      {location === "/patient/medicines" && (
+                        <motion.span
+                          layoutId="sidebar-active-indicator"
+                          className="absolute left-0 top-0 h-full w-1 bg-[#1F5C3F] rounded-r"
+                          initial={{ scaleY: 0 }}
+                          animate={{ scaleY: 1 }}
+                          exit={{ scaleY: 0 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 300,
+                            damping: 30,
+                          }}
+                        />
+                      )}
+                      <MedicationIcon fontSize="small" />
+                      <span className="ml-3">My Medicines</span>
                     </motion.div>
                   </Link>
                 </li>

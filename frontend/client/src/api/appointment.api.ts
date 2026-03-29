@@ -91,6 +91,22 @@ export const appointmentApi = {
     return apiClient.get(`/appointments/patient/${patientId}/treatment-plan`);
   },
 
+  getTreatmentPlanTimeline: async (patientId: string) => {
+    return apiClient.get(`/appointments/patient/${patientId}/treatment-plan/timeline`);
+  },
+
+  submitTreatmentPlanFeedback: async (
+    patientId: string,
+    payload: {
+      treatmentPlanId?: string;
+      planType: "diet" | "asanas" | "medicines";
+      feedbackType: "working" | "not_effective" | "terminate_request" | "stopped";
+      message?: string;
+    }
+  ) => {
+    return apiClient.post(`/appointments/patient/${patientId}/treatment-plan/feedback`, payload);
+  },
+
   reschedulePatientAppointment: async (
     patientId: string,
     appointmentId: string,

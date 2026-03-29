@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   Clock,
@@ -39,10 +39,20 @@ const categoryLabelMap: Record<string, string> = {
 
 export default function DoctorAppointmentsFlow() {
   const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
-  const doctorId =
-    loggedInUser?.portal === "DOCTOR" || loggedInUser?.role === "DOCTOR"
-      ? loggedInUser?.id || ""
+  const rememberedDoctorId =
+    typeof window !== "undefined"
+      ? String(window.sessionStorage.getItem("doctor:active-id") || "").trim()
       : "";
+  const normalizedRole = String(loggedInUser?.role || loggedInUser?.portal || "").toUpperCase();
+  const rawDoctorId = String(loggedInUser?.id || loggedInUser?.staffId || "").trim();
+  const doctorId = normalizedRole && normalizedRole !== "DOCTOR" ? "" : (rawDoctorId || rememberedDoctorId);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (doctorId) {
+      window.sessionStorage.setItem("doctor:active-id", doctorId);
+    }
+  }, [doctorId]);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const { data: doctorAppointmentsData, isLoading, refetch } = useDoctorAppointments(doctorId);
