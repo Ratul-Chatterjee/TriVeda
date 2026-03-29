@@ -7,3 +7,6 @@ numpy
 requests
 sentence-transformers
 faiss-cpu
+pymupdf
+pytesseract
+pillow

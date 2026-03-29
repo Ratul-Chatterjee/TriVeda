@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { prisma } from '../db/config.js';
 import ApiError from '../utils/ApiError.js';
 import ApiResponse from '../utils/ApiResponse.js';
@@ -583,6 +584,51 @@ export const uploadPatientReport = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'Invalid fileBase64 payload.');
     }
 
+    let resolvedSummary =
+        typeof summary === 'string' && summary.trim().length > 0
+            ? summary.trim()
+            : '';
+
+    try {
+        const aiMicroserviceUrl = process.env.AI_MICROSERVICE_URL || 'http://localhost:8000';
+        const ocrResponse = await axios.post(
+            `${aiMicroserviceUrl}/api/medical-ocr/analyze`,
+            {
+                file_name: String(fileName),
+                mime_type: String(mimeType),
+                file_base64: String(fileBase64),
+                include_ayurveda: true,
+            },
+            {
+                timeout: 180000,
+            }
+        );
+
+        const aiPayload = ocrResponse?.data || {};
+        const aiSummary =
+            typeof aiPayload?.summary === 'string' && aiPayload.summary.trim().length > 0
+                ? aiPayload.summary.trim()
+                : '';
+
+        if (aiSummary) {
+            resolvedSummary = aiSummary;
+        }
+    } catch (error) {
+        const aiErrorMessage =
+            error?.response?.data?.detail ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'AI OCR temporarily unavailable.';
+
+        if (!resolvedSummary) {
+            resolvedSummary = `Report uploaded successfully. OCR analysis is unavailable right now. (${aiErrorMessage})`;
+        }
+    }
+
+    if (!resolvedSummary) {
+        resolvedSummary = 'Report uploaded and stored successfully.';
+    }
+
     const report = await prisma.patientReport.create({
         data: {
             patientId: id,
@@ -590,10 +636,7 @@ export const uploadPatientReport = asyncHandler(async (req, res) => {
             mimeType: String(mimeType),
             sizeBytes: Number(sizeBytes),
             fileData: fileBuffer,
-            summary:
-                typeof summary === 'string' && summary.trim().length > 0
-                    ? summary.trim()
-                    : 'Analysis complete: Report uploaded and stored successfully.',
+            summary: resolvedSummary,
         },
         select: {
             id: true,
@@ -640,4 +683,120 @@ export const downloadPatientReport = asyncHandler(async (req, res) => {
     );
 
     return res.status(200).send(Buffer.from(report.fileData));
+});
+
+export const deletePatientReport = asyncHandler(async (req, res) => {
+    const { id, reportId } = req.params;
+
+    if (!id || !reportId) {
+        throw new ApiError(400, 'Patient ID and report ID are required.');
+    }
+
+    const report = await prisma.patientReport.findFirst({
+        where: {
+            id: reportId,
+            patientId: id,
+        },
+    });
+
+    if (!report) {
+        throw new ApiError(404, 'Report not found.');
+    }
+
+    await prisma.patientReport.delete({
+        where: { id: reportId },
+    });
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, { id: reportId }, 'Report deleted successfully.'));
+});
+
+export const reanalyzePatientReport = asyncHandler(async (req, res) => {
+    const { id, reportId } = req.params;
+
+    if (!id || !reportId) {
+        throw new ApiError(400, 'Patient ID and report ID are required.');
+    }
+
+    const report = await prisma.patientReport.findFirst({
+        where: {
+            id: reportId,
+            patientId: id,
+        },
+        select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            fileData: true,
+        },
+    });
+
+    if (!report) {
+        throw new ApiError(404, 'Report not found.');
+    }
+
+    let fileBase64;
+    try {
+        fileBase64 = report.fileData.toString('base64');
+    } catch (_error) {
+        throw new ApiError(400, 'Unable to encode report data.');
+    }
+
+    let resolvedSummary = '';
+
+    try {
+        const aiMicroserviceUrl = process.env.AI_MICROSERVICE_URL || 'http://localhost:8000';
+        const ocrResponse = await axios.post(
+            `${aiMicroserviceUrl}/api/medical-ocr/analyze`,
+            {
+                file_name: String(report.fileName),
+                mime_type: String(report.mimeType),
+                file_base64: fileBase64,
+                include_ayurveda: true,
+            },
+            {
+                timeout: 180000,
+            }
+        );
+
+        const aiPayload = ocrResponse?.data || {};
+        const aiSummary =
+            typeof aiPayload?.summary === 'string' && aiPayload.summary.trim().length > 0
+                ? aiPayload.summary.trim()
+                : '';
+
+        if (aiSummary) {
+            resolvedSummary = aiSummary;
+        }
+    } catch (error) {
+        const aiErrorMessage =
+            error?.response?.data?.detail ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'AI OCR temporarily unavailable.';
+
+        resolvedSummary = `Report re-analyzed. OCR analysis is unavailable right now. (${aiErrorMessage})`;
+    }
+
+    if (!resolvedSummary) {
+        resolvedSummary = 'Report re-analyzed but no summary generated.';
+    }
+
+    const updatedReport = await prisma.patientReport.update({
+        where: { id: reportId },
+        data: { summary: resolvedSummary },
+        select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            sizeBytes: true,
+            summary: true,
+            createdAt: true,
+        },
+    });
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, updatedReport, 'Report re-analyzed successfully.'));
 });

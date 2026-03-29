@@ -531,15 +531,13 @@ export default function PatientProfile() {
             mimeType: file.type || "application/octet-stream",
             sizeBytes: file.size,
             fileBase64,
-            summary:
-              "Analysis complete: No critical abnormalities detected. Recommended: Follow up on Vitamin D levels and maintain current diet plan.",
           },
         },
         {
           onSuccess: () => {
             toast({
               title: "Report Uploaded",
-              description: "Medical report stored in database successfully.",
+              description: "Medical report stored and analyzed successfully.",
             });
           },
           onError: (error: any) => {

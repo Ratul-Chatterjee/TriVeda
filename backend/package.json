@@ -10,7 +10,8 @@
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
     "seed:doctors": "node seedDoctors.js",
-    "backfill:diet": "node backfillDietPlans.js"
+    "backfill:diet": "node backfillDietPlans.js",
+    "backfill:lifecycle": "node backfillTreatmentPlanLifecycle.js"
   },
   "devDependencies": {
     "@prisma/config": "^7.5.0",

@@ -1,543 +1,365 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  FileText,
-  Calendar,
-  Eye,
-  XCircle,
-  UserPlus,
-  UserMinus,
-  Users,
-  Clock,
-  Shield,
-  User,
-  Activity,
-  Heart,
-  Sparkles,
-  Leaf,
-  Download,
-  Share2,
-  ChevronRight,
-  X,
-  AlertCircle,
-  CheckCircle,
-  Lock,
-  Unlock,
-} from "lucide-react";
+import { Calendar, Download, Eye, FileText, Search, Upload, X, Trash2, RotateCw } from "lucide-react";
+import { usePatientProfile, useUploadPatientReport } from "@/hooks/useProfile";
+import { useToast } from "@/hooks/use-toast";
+import axios from "axios";
 
-// Mock health records data (unchanged)
-const mockHealthRecords = [
-  {
-    id: 1,
-    title: "Annual Blood Test",
-    date: "2025-08-10",
-    summary: "Normal CBC, slightly elevated cholesterol.",
-    details: `
-      <b>Test:</b> Complete Blood Count, Lipid Profile<br/>
-      <b>Findings:</b> All values within normal range except LDL cholesterol (borderline high).<br/>
-  <b>Doctor's Note:</b> Maintain current diet, increase physical activity, recheck in 6 months.`,
-  },
-  {
-    id: 2,
-    title: "X-Ray - Chest",
-    date: "2025-06-22",
-    summary: "No abnormalities detected.",
-    details: `
-      <b>Test:</b> Chest X-Ray<br/>
-      <b>Findings:</b> Clear lungs, no signs of infection or mass.<br/>
-  <b>Doctor's Note:</b> No action needed.`,
-  },
-  {
-    id: 3,
-    title: "Blood Pressure Check",
-    date: "2025-04-15",
-    summary: "BP slightly elevated, advised lifestyle changes.",
-    details: `
-      <b>Test:</b> Blood Pressure<br/>
-      <b>Findings:</b> 135/88 mmHg<br/>
-  <b>Doctor's Note:</b> Reduce salt intake, regular exercise, monitor weekly.`,
-  },
-  {
-    id: 4,
-    title: "COVID-19 RT-PCR",
-    date: "2024-12-01",
-    summary: "Negative.",
-    details: `
-      <b>Test:</b> RT-PCR for SARS-CoV-2<br/>
-      <b>Findings:</b> Negative<br/>
-  <b>Doctor's Note:</b> Continue precautions.`,
-  },
-];
-
-// Mock users (doctors/admins) (unchanged)
-const mockUsers = [
-  { id: "d1", name: "Dr. A. Sharma", role: "Doctor" },
-  { id: "d2", name: "Dr. B. Singh", role: "Doctor" },
-  { id: "a1", name: "Admin R. Patel", role: "Admin" },
-];
-
-// Initial access and view logs (unchanged)
-const initialAccess = {
-  1: ["d1"],
-  2: ["d2", "a1"],
-  3: [],
-  4: ["a1"],
-};
-const initialViewLogs = {
-  1: [{ userId: "d1", date: "2025-09-18" }],
-  2: [
-    { userId: "d2", date: "2025-09-19" },
-    { userId: "a1", date: "2025-09-20" },
-  ],
-  3: [],
-  4: [{ userId: "a1", date: "2025-09-17" }],
-};
-
-// Animation variants
 const fadeInUp = {
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -20 },
-};
-
-const staggerContainer = {
-  animate: {
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
+  exit: { opacity: 0, y: -16 },
 };
 
 export default function PatientHealthRecords() {
-  const [selectedRecord, setSelectedRecord] = useState<
-    null | (typeof mockHealthRecords)[0]
-  >(null);
-  const [access, setAccess] = useState<{ [recordId: number]: string[] }>(initialAccess);
-  const [viewLogs, setViewLogs] = useState<{
-    [recordId: number]: { userId: string; date: string }[];
-  }>(initialViewLogs);
-  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const { toast } = useToast();
+  const loggedInUser = JSON.parse(localStorage.getItem("triveda_user") || "{}");
+  const patientId = loggedInUser?.id || "";
+  const patientEmail = loggedInUser?.email || "";
+
+  const { data: patientProfileData, isLoading, isError, refetch } = usePatientProfile(patientId, patientEmail);
+  const uploadPatientReportMutation = useUploadPatientReport();
+  const profilePayload: any = (patientProfileData as any)?.data || patientProfileData || {};
+  const effectivePatientId = profilePayload?.id || patientId;
+
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [reanalyzeReportId, setReanalyzeReportId] = useState<string | null>(null);
+
+  const getAnalysisStatus = (summary: string) => {
+    if (!summary) return { status: "pending", label: "Pending" };
+    if (summary.includes("OCR analysis is unavailable")) return { status: "failed", label: "Failed" };
+    return { status: "success", label: "Success" };
+  };
+
+  const reports = useMemo(() => {
+    const list = Array.isArray(profilePayload?.reports) ? profilePayload.reports : [];
+    return list.map((report: any) => ({
+      id: report.id,
+      fileName: report.fileName,
+      mimeType: report.mimeType,
+      sizeBytes: report.sizeBytes,
+      summary:
+        report.summary ||
+        "Report uploaded successfully. AI analysis will appear here after processing.",
+      createdAt: report.createdAt,
+      dateLabel: report.createdAt
+        ? new Date(report.createdAt).toLocaleString()
+        : "-",
+      analysisStatus: getAnalysisStatus(report.summary),
+    }));
+  }, [profilePayload]);
+
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Grant access to a user for a record
-  const grantAccess = (recordId: number, userId: string) => {
-    setAccess((prev) => ({
-      ...prev,
-      [recordId]: [...(prev[recordId] || []), userId],
-    }));
-  };
+  const handleUploadReport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // Revoke access
-  const revokeAccess = (recordId: number, userId: string) => {
-    setAccess((prev) => ({
-      ...prev,
-      [recordId]: (prev[recordId] || []).filter((id) => id !== userId),
-    }));
-  };
-
-  // Filter records
-  const filteredRecords = mockHealthRecords.filter((rec) => {
-    if (activeFilter === "all") return true;
-    if (activeFilter === "recent") {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return new Date(rec.date) >= thirtyDaysAgo;
+    if (!effectivePatientId) {
+      toast({
+        title: "Upload Failed",
+        description: "Patient ID is missing.",
+        variant: "destructive",
+      });
+      e.target.value = "";
+      return;
     }
-    return true;
-  }).filter((rec) => 
-    rec.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    rec.summary.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
-  // Get status color based on record type
-  const getRecordColor = (title: string) => {
-    if (title.includes("Blood")) return "rose";
-    if (title.includes("X-Ray")) return "blue";
-    if (title.includes("Pressure")) return "amber";
-    if (title.includes("COVID")) return "purple";
-    return "emerald";
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        toast({
+          title: "Upload Failed",
+          description: "Unable to read selected file.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const fileBase64 = result.includes(",") ? result.split(",")[1] : result;
+
+      uploadPatientReportMutation.mutate(
+        {
+          id: effectivePatientId,
+          payload: {
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            fileBase64,
+          },
+        },
+        {
+          onSuccess: () => {
+            toast({
+              title: "Report Uploaded",
+              description: "Medical report stored and analyzed successfully.",
+            });
+            refetch();
+          },
+          onError: (error: any) => {
+            toast({
+              title: "Upload Failed",
+              description: error?.message || "Could not upload report.",
+              variant: "destructive",
+            });
+          },
+        }
+      );
+    };
+
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
+
+  const handleDeleteReport = async (reportId: string) => {
+    setDeletingReportId(reportId);
+    try {
+      await axios.delete(`/api/profile/patient/${effectivePatientId}/reports/${reportId}`);
+      toast({
+        title: "Report Deleted",
+        description: "Report has been removed successfully.",
+      });
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: "Delete Failed",
+        description: error?.message || "Could not delete report.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingReportId(null);
+    }
+  };
+
+  const handleReanalyzeReport = async (reportId: string) => {
+    setReanalyzeReportId(reportId);
+    try {
+      await axios.put(`/api/profile/patient/${effectivePatientId}/reports/${reportId}/reanalyze`);
+      toast({
+        title: "Report Re-analyzed",
+        description: "OCR analysis has been re-run for this report.",
+      });
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: "Re-analysis Failed",
+        description: error?.message || "Could not re-analyze report.",
+        variant: "destructive",
+      });
+    } finally {
+      setReanalyzeReportId(null);
+    }
+  };
+
+  const filteredReports = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return reports;
+
+    return reports.filter((report: any) => {
+      const name = String(report.fileName || "").toLowerCase();
+      const summary = String(report.summary || "").toLowerCase();
+      return name.includes(query) || summary.includes(query);
+    });
+  }, [reports, searchTerm]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6">
+        <div className="rounded-xl border border-emerald-100 bg-white p-6 text-sm text-gray-500">
+          Loading health records...
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || (!patientId && !patientEmail)) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-6">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+          Unable to load health records.
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-background text-foreground">
-
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* Header */}
-        <motion.div
-          className="mb-8"
-        >
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
-              <div className="relative">
-                <div className="absolute inset-0 bg-emerald-500 rounded-2xl blur-lg opacity-50"></div>
-                <div className="relative w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-r from-emerald-500 to-[#10B981] flex items-center justify-center">
-                  <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-                </div>
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 via-[#10B981] to-[#0D9488] bg-clip-text text-transparent leading-tight break-words">
-                  Health Records
-                </h1>
-                <p className="text-gray-600 text-base sm:text-lg mt-1 leading-relaxed">
-                  Manage and track your medical history securely
-                </p>
-              </div>
-            </div>
-
-            {/* Stats Summary */}
-            <div className="flex w-full lg:w-auto flex-wrap gap-2 sm:gap-3">
-              <div className="bg-white/80 backdrop-blur-sm px-3 sm:px-4 py-2 rounded-xl shadow-sm min-w-[120px] flex-1 lg:flex-none">
-                <p className="text-xs text-gray-500">Total Records</p>
-                <p className="text-xl font-bold text-emerald-600">{mockHealthRecords.length}</p>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm px-3 sm:px-4 py-2 rounded-xl shadow-sm min-w-[120px] flex-1 lg:flex-none">
-                <p className="text-xs text-gray-500">With Access</p>
-                <p className="text-xl font-bold text-[#1F5C3F]">
-                  {Object.values(access).flat().length}
-                </p>
-              </div>
-            </div>
+    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mx-auto max-w-6xl"
+      >
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-[#1F5C3F] to-[#10B981] bg-clip-text text-transparent">
+              Health Records
+            </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              AI-extracted insights from your uploaded medical documents.
+            </p>
           </div>
-
-          {/* Search and Filter */}
-          <div className="mt-6 flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="w-full sm:w-80 relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search records..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-3 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-emerald-500 transition-all"
+                placeholder="Search reports"
+                className="w-full rounded-xl border border-emerald-100 bg-white py-2 pl-9 pr-3 text-sm focus:border-emerald-300 focus:outline-none"
               />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {["all", "recent"].map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setActiveFilter(filter)}
-                  className={`px-3 sm:px-4 py-2 rounded-xl font-medium transition-all text-sm sm:text-base ${
-                    activeFilter === filter
-                      ? "bg-gradient-to-r from-emerald-500 to-[#10B981] text-white shadow-lg"
-                      : "bg-white/80 backdrop-blur-sm text-gray-600 hover:bg-white"
-                  }`}
-                >
-                  {filter === "all" ? "All Records" : "Last 30 Days"}
-                </button>
-              ))}
-            </div>
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1F5C3F] px-3 py-2 text-xs font-medium text-white hover:bg-[#184b33]">
+              <Upload className="h-4 w-4" />
+              Upload Report
+              <input
+                type="file"
+                onChange={handleUploadReport}
+                className="hidden"
+                accept=".pdf,.jpg,.jpeg,.png"
+              />
+            </label>
           </div>
-        </motion.div>
+        </div>
 
-        {/* Records Grid */}
-        <motion.div
-          variants={staggerContainer}
-          initial="initial"
-          animate="animate"
-          className="space-y-4"
-        >
-          {filteredRecords.length === 0 ? (
-            <motion.div
-              variants={fadeInUp}
-              className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/50"
-            >
-              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg">No records found</p>
-            </motion.div>
-          ) : (
-            filteredRecords.map((rec, idx) => {
-              const allowedUsers = access[rec.id] || [];
-              const viewers = (viewLogs[rec.id] || [])
-                .map((log) => {
-                  const user = mockUsers.find((u) => u.id === log.userId);
-                  return user ? { ...user, date: log.date } : null;
-                })
-                .filter(Boolean) as Array<{
-                  id: string;
-                  name: string;
-                  role: string;
-                  date: string;
-                }>;
-              const recordColor = getRecordColor(rec.title);
-
-              return (
-                <motion.div
-                  key={rec.id}
-                  variants={fadeInUp}
-                  className={`bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 p-4 sm:p-6 hover:shadow-xl transition-all overflow-hidden relative group`}
-                >
-                  {/* Decorative gradient line */}
-                  <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${recordColor}-500 to-${recordColor}-600`}></div>
-                  
-                  <div className="flex flex-col lg:flex-row lg:items-start gap-6">
-                    {/* Left side - Record Info */}
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-3 gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className={`p-3 rounded-xl bg-gradient-to-br from-${recordColor}-100 to-${recordColor}-200`}>
-                            <FileText className={`w-6 h-6 text-${recordColor}-600`} />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="text-lg sm:text-xl font-bold text-gray-900 break-words">{rec.title}</h3>
-                            <div className="flex flex-wrap items-center gap-2 mt-1">
-                              <div className="flex items-center text-sm text-gray-500">
-                                <Calendar className="w-4 h-4 mr-1" />
-                                {rec.date}
-                              </div>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${recordColor}-100 text-${recordColor}-800`}>
-                                {rec.title.includes("Blood") ? "Lab Report" : 
-                                 rec.title.includes("X-Ray") ? "Imaging" : 
-                                 rec.title.includes("Pressure") ? "Vital" : "Test"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-gray-600 text-sm sm:text-base mb-4 pl-0 sm:pl-14">{rec.summary}</p>
-
-                      {/* Viewers */}
-                      <div className="pl-0 sm:pl-14 mb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Users className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-700">Viewed by:</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {viewers.length === 0 ? (
-                            <span className="text-sm text-gray-400 italic">No views yet</span>
-                          ) : (
-                            viewers.map((v) => (
-                              <div
-                                key={v.id}
-                                className="flex items-center gap-1 px-3 py-1 bg-gray-100 rounded-full"
-                              >
-                                <User className="w-3 h-3 text-gray-500" />
-                                <span className="text-xs font-medium text-gray-700">{v.name}</span>
-                                <span className="text-xs text-gray-400">({v.role})</span>
-                                <span className="text-xs text-gray-400 ml-1">• {v.date}</span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Access Controls */}
-                      <div className="pl-0 sm:pl-14">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Shield className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-700">Access Control:</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {mockUsers.map((user) =>
-                            allowedUsers.includes(user.id) ? (
-                              <motion.button
-                                key={user.id}
-                                whileTap={{ scale: 0.98 }}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-xs font-medium hover:bg-rose-200 transition-all border border-rose-200"
-                                onClick={() => revokeAccess(rec.id, user.id)}
-                              >
-                                <Lock className="w-3 h-3" />
-                                Revoke {user.name}
-                              </motion.button>
-                            ) : (
-                              <motion.button
-                                key={user.id}
-                                whileTap={{ scale: 0.98 }}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-200 transition-all border border-emerald-200"
-                                onClick={() => grantAccess(rec.id, user.id)}
-                              >
-                                <Unlock className="w-3 h-3" />
-                                Grant {user.name}
-                              </motion.button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right side - Actions */}
-                    <div className="flex flex-col sm:flex-row lg:flex-col gap-2 lg:min-w-[140px]">
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500 to-[#10B981] text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all w-full"
-                        onClick={() => setSelectedRecord(rec)}
-                      >
-                        <Eye className="w-4 h-4" />
-                        View Details
-                        <ChevronRight className="w-4 h-4 ml-auto" />
-                      </motion.button>
-                      
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-all w-full"
-                      >
-                        <Download className="w-4 h-4" />
-                        Export
-                      </motion.button>
-                    </div>
-                  </div>
-
-                  {/* Hover effect */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                </motion.div>
-              );
-            })
-          )}
-        </motion.div>
-
-        {/* Modal for record details */}
-        <AnimatePresence>
-          {selectedRecord && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-              onClick={() => setSelectedRecord(null)}
-            >
+        {filteredReports.length === 0 ? (
+          <div className="rounded-2xl border border-emerald-100 bg-white p-10 text-center">
+            <FileText className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm text-gray-500">No health records available yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredReports.map((report: any) => (
               <motion.div
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                onClick={(e) => e.stopPropagation()}
-                className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full relative overflow-hidden"
+                key={report.id}
+                variants={fadeInUp}
+                initial="initial"
+                animate="animate"
+                className="rounded-2xl border border-emerald-100 bg-white p-4 sm:p-5 shadow-sm"
               >
-                {/* Decorative gradient line */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-[#10B981] to-[#0D9488]"></div>
-                
-                <div className="p-8">
-                  <button
-                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-                    onClick={() => setSelectedRecord(null)}
-                    aria-label="Close"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="p-4 bg-gradient-to-br from-emerald-100 to-emerald-100 rounded-xl">
-                      <FileText className="w-8 h-8 text-emerald-600" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">
-                        {selectedRecord.title}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-[#1F5C3F]" />
+                      <h2 className="truncate text-base font-semibold text-gray-900">
+                        {report.fileName}
                       </h2>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-500">
-                          {selectedRecord.date}
-                        </span>
-                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                        report.analysisStatus.status === 'success' ? 'bg-green-100 text-green-800' :
+                        report.analysisStatus.status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {report.analysisStatus.label}
+                      </span>
                     </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {report.dateLabel}
+                      </span>
+                      <span>{report.mimeType || "-"}</span>
+                      <span>{Math.round((Number(report.sizeBytes || 0) / 1024) * 10) / 10} KB</span>
+                    </div>
+                    <p className="mt-3 line-clamp-3 rounded-lg bg-emerald-50 p-3 text-sm text-gray-700 whitespace-pre-wrap">
+                      {report.summary}
+                    </p>
                   </div>
-
-                  <div className="space-y-6">
-                    {/* Details */}
-                    <div className="bg-gray-50 rounded-xl p-6">
-                      <div
-                        className="text-gray-700 prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: selectedRecord.details }}
-                      />
-                    </div>
-
-                    {/* Viewers in modal */}
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                        <Users className="w-4 h-4 text-emerald-500" />
-                        Viewed by
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {(viewLogs[selectedRecord.id] || []).length === 0 ? (
-                          <span className="text-sm text-gray-400 italic">No views yet</span>
-                        ) : (
-                          (viewLogs[selectedRecord.id] || []).map((log, i) => {
-                            const user = mockUsers.find((u) => u.id === log.userId);
-                            return user ? (
-                              <div
-                                key={user.id + log.date}
-                                className="flex items-center gap-2 px-3 py-2 bg-emerald-50 rounded-lg"
-                              >
-                                <User className="w-3 h-3 text-emerald-600" />
-                                <span className="text-sm font-medium text-emerald-700">
-                                  {user.name}
-                                </span>
-                                <span className="text-xs text-gray-500">({user.role})</span>
-                                <span className="text-xs text-gray-400">• {log.date}</span>
-                              </div>
-                            ) : null;
-                          })
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Access controls in modal */}
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-emerald-500" />
-                        Manage Access
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {mockUsers.map((user) =>
-                          (access[selectedRecord.id] || []).includes(user.id) ? (
-                            <motion.button
-                              key={user.id}
-                              whileTap={{ scale: 0.98 }}
-                              className="flex items-center justify-between p-3 bg-rose-50 text-rose-700 rounded-xl hover:bg-rose-100 transition-all border border-rose-200"
-                              onClick={() => revokeAccess(selectedRecord.id, user.id)}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Lock className="w-4 h-4" />
-                                <span className="text-sm font-medium">{user.name}</span>
-                              </div>
-                              <span className="text-xs">Revoke</span>
-                            </motion.button>
-                          ) : (
-                            <motion.button
-                              key={user.id}
-                              whileTap={{ scale: 0.98 }}
-                              className="flex items-center justify-between p-3 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-all border border-emerald-200"
-                              onClick={() => grantAccess(selectedRecord.id, user.id)}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Unlock className="w-4 h-4" />
-                                <span className="text-sm font-medium">{user.name}</span>
-                              </div>
-                              <span className="text-xs">Grant</span>
-                            </motion.button>
-                          )
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex gap-3 pt-4">
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-[#10B981] text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
-                        onClick={() => setSelectedRecord(null)}
+                  <div className="flex gap-2 sm:flex-col sm:min-w-[160px]">
+                    <button
+                      onClick={() => setSelectedReport(report)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#1F5C3F] px-3 py-2 text-xs font-medium text-white hover:bg-[#184b33]"
+                    >
+                      <Eye className="h-4 w-4" />
+                      View
+                    </button>
+                    {report.id && effectivePatientId && (
+                      <a
+                        href={`/api/profile/patient/${effectivePatientId}/reports/${report.id}/download`}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-medium text-[#1F5C3F] hover:bg-emerald-50"
                       >
-                        Close
-                      </motion.button>
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-all"
+                        <Download className="h-4 w-4" />
+                        Download
+                      </a>
+                    )}
+                    {report.analysisStatus.status === 'failed' && (
+                      <button
+                        onClick={() => handleReanalyzeReport(report.id)}
+                        disabled={reanalyzeReportId === report.id}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-orange-200 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50"
                       >
-                        <Download className="w-4 h-4" />
-                      </motion.button>
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        className="px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-all"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </motion.button>
-                    </div>
+                        <RotateCw className="h-4 w-4" />
+                        {reanalyzeReportId === report.id ? 'Retrying...' : 'Retry'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this report?')) {
+                          handleDeleteReport(report.id);
+                        }
+                      }}
+                      disabled={deletingReportId === report.id}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {deletingReportId === report.id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
                 </div>
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
 
+      <AnimatePresence>
+        {selectedReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setSelectedReport(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 10 }}
+              className="relative max-h-[85vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="absolute right-4 top-4 rounded p-1 text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="mb-4 pr-8">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900">{selectedReport.fileName}</h3>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                    selectedReport.analysisStatus.status === 'success' ? 'bg-green-100 text-green-800' :
+                    selectedReport.analysisStatus.status === 'failed' ? 'bg-red-100 text-red-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {selectedReport.analysisStatus.label}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{selectedReport.dateLabel}</p>
+              </div>
+
+              <div className="rounded-xl bg-emerald-50 p-4">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                  {selectedReport.summary}
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
