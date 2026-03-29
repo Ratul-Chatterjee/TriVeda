@@ -78,6 +78,15 @@ const allowedFeedbackTypes = new Set([
   "terminate_request",
   "stopped",
 ]);
+const allowedLifecycleStatuses = new Set([
+  "ACTIVE",
+  "WORKING",
+  "NOT_EFFECTIVE",
+  "STOP_REQUESTED",
+  "STOPPED",
+  "COMPLETED",
+  "SUPERSEDED",
+]);
 
 const parseDateOrNull = (value, fieldName) => {
   const asString = toSafeString(value, fieldName, 100);
@@ -133,7 +142,8 @@ const normalizePlanLifecycle = (rawLifecycle) => {
   return {
     effectiveFrom: parseDateOrNull(rawLifecycle.effectiveFrom, "planLifecycle.effectiveFrom"),
     effectiveTo: parseDateOrNull(rawLifecycle.effectiveTo, "planLifecycle.effectiveTo"),
-    overallStatus: toSafeString(rawLifecycle.overallStatus, "planLifecycle.overallStatus", 60).toUpperCase() || "ACTIVE",
+    overallStatus:
+      toSafeString(rawLifecycle.overallStatus, "planLifecycle.overallStatus", 60).toUpperCase() || "ACTIVE",
     diet: normalizeDomain("diet"),
     asanas: normalizeDomain("asanas"),
     medicines: normalizeDomain("medicines"),
@@ -147,9 +157,122 @@ const normalizePlanLifecycle = (rawLifecycle) => {
   };
 };
 
+const normalizeLifecycleStatus = (value, fallback = "ACTIVE") => {
+  const upper = String(value || "").trim().toUpperCase();
+  return allowedLifecycleStatuses.has(upper) ? upper : fallback;
+};
+
+const makeDefaultLifecycle = () => ({
+  effectiveFrom: null,
+  effectiveTo: null,
+  overallStatus: "ACTIVE",
+  diet: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+  asanas: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+  medicines: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
+  feedbackSettings: {
+    notifyOnWorking: true,
+    notifyOnNotEffective: true,
+    notifyOnTerminateRequest: true,
+  },
+  feedbackEvents: [],
+  doctorAlerts: [],
+});
+
+const enumDomainToKey = {
+  DIET: "diet",
+  ASANAS: "asanas",
+  MEDICINES: "medicines",
+};
+
+const keyToEnumDomain = {
+  diet: "DIET",
+  asanas: "ASANAS",
+  medicines: "MEDICINES",
+};
+
+const keyToEnumFeedbackType = {
+  working: "WORKING",
+  not_effective: "NOT_EFFECTIVE",
+  terminate_request: "TERMINATE_REQUEST",
+  stopped: "STOPPED",
+};
+
+const mapLifecycleRecordToPayload = (lifecycleRecord) => {
+  if (!lifecycleRecord) return null;
+
+  const payload = makeDefaultLifecycle();
+  payload.effectiveFrom = lifecycleRecord.effectiveFrom
+    ? new Date(lifecycleRecord.effectiveFrom).toISOString()
+    : null;
+  payload.effectiveTo = lifecycleRecord.effectiveTo
+    ? new Date(lifecycleRecord.effectiveTo).toISOString()
+    : null;
+  payload.overallStatus = normalizeLifecycleStatus(lifecycleRecord.overallStatus, "ACTIVE");
+  payload.feedbackSettings = {
+    notifyOnWorking: Boolean(lifecycleRecord.notifyOnWorking),
+    notifyOnNotEffective: Boolean(lifecycleRecord.notifyOnNotEffective),
+    notifyOnTerminateRequest: Boolean(lifecycleRecord.notifyOnTerminateRequest),
+  };
+
+  const domainConfigs = Array.isArray(lifecycleRecord.domainConfigs)
+    ? lifecycleRecord.domainConfigs
+    : [];
+
+  for (const config of domainConfigs) {
+    const domainKey = enumDomainToKey[String(config.domain || "").toUpperCase()];
+    if (!domainKey) continue;
+    payload[domainKey] = {
+      stopConditions: String(config.stopConditions || ""),
+      reviewCadenceDays:
+        Number.isFinite(Number(config.reviewCadenceDays)) && Number(config.reviewCadenceDays) > 0
+          ? Math.trunc(Number(config.reviewCadenceDays))
+          : null,
+      patientGuidance: String(config.patientGuidance || ""),
+      status: normalizeLifecycleStatus(config.status, "ACTIVE"),
+    };
+  }
+
+  const feedbackEvents = Array.isArray(lifecycleRecord.feedbackEvents)
+    ? lifecycleRecord.feedbackEvents
+    : [];
+  payload.feedbackEvents = feedbackEvents.map((event) => ({
+    id: event.id,
+    createdAt: new Date(event.createdAt).toISOString(),
+    patientId: event.patientId,
+    doctorId: event.doctorId,
+    treatmentPlanId: event.treatmentPlanId,
+    appointmentId: event.appointmentId || null,
+    planType: enumDomainToKey[String(event.planType || "").toUpperCase()] || "diet",
+    feedbackType: String(event.feedbackType || "").toLowerCase(),
+    message: event.message || "",
+    readByDoctor: Boolean(event.readByDoctor),
+  }));
+  payload.doctorAlerts = payload.feedbackEvents.map((event) => ({
+    ...event,
+    alertType: "PATIENT_FEEDBACK",
+  }));
+
+  return payload;
+};
+
+const getPlanLifecycleSnapshot = (treatmentPlan) => {
+  const mappedFromRecord = mapLifecycleRecordToPayload(treatmentPlan?.lifecycle);
+  if (mappedFromRecord) return mappedFromRecord;
+
+  const legacyRaw = treatmentPlan?.diagnosis?.planLifecycle;
+  const normalizedLegacy = normalizePlanLifecycle(legacyRaw || {});
+  return normalizedLegacy || makeDefaultLifecycle();
+};
+
 const derivePlanStatus = (treatmentPlan) => {
+  const lifecycleRecordStatus = treatmentPlan?.lifecycle?.overallStatus;
+  if (lifecycleRecordStatus) return normalizeLifecycleStatus(lifecycleRecordStatus, "ACTIVE");
+
   const lifecycle = treatmentPlan?.diagnosis?.planLifecycle;
-  if (lifecycle?.overallStatus) return String(lifecycle.overallStatus).toUpperCase();
+  if (lifecycle?.overallStatus) {
+    return normalizeLifecycleStatus(lifecycle.overallStatus, "ACTIVE");
+  }
+
   return treatmentPlan?.isCompleted ? "COMPLETED" : "ACTIVE";
 };
 
@@ -997,6 +1120,56 @@ export const saveDoctorPlan = asyncHandler(async (req, res) => {
       },
     });
 
+    if (normalized.planLifecycle) {
+      const lifecycleRecord = await tx.treatmentPlanLifecycle.upsert({
+        where: { treatmentPlanId: treatmentPlan.id },
+        create: {
+          treatmentPlanId: treatmentPlan.id,
+          effectiveFrom: normalized.planLifecycle.effectiveFrom
+            ? new Date(normalized.planLifecycle.effectiveFrom)
+            : null,
+          effectiveTo: normalized.planLifecycle.effectiveTo
+            ? new Date(normalized.planLifecycle.effectiveTo)
+            : null,
+          overallStatus: normalizeLifecycleStatus(normalized.planLifecycle.overallStatus, "ACTIVE"),
+          notifyOnWorking: Boolean(normalized.planLifecycle.feedbackSettings?.notifyOnWorking),
+          notifyOnNotEffective: Boolean(normalized.planLifecycle.feedbackSettings?.notifyOnNotEffective),
+          notifyOnTerminateRequest: Boolean(
+            normalized.planLifecycle.feedbackSettings?.notifyOnTerminateRequest
+          ),
+        },
+        update: {
+          effectiveFrom: normalized.planLifecycle.effectiveFrom
+            ? new Date(normalized.planLifecycle.effectiveFrom)
+            : null,
+          effectiveTo: normalized.planLifecycle.effectiveTo
+            ? new Date(normalized.planLifecycle.effectiveTo)
+            : null,
+          overallStatus: normalizeLifecycleStatus(normalized.planLifecycle.overallStatus, "ACTIVE"),
+          notifyOnWorking: Boolean(normalized.planLifecycle.feedbackSettings?.notifyOnWorking),
+          notifyOnNotEffective: Boolean(normalized.planLifecycle.feedbackSettings?.notifyOnNotEffective),
+          notifyOnTerminateRequest: Boolean(
+            normalized.planLifecycle.feedbackSettings?.notifyOnTerminateRequest
+          ),
+        },
+      });
+
+      await tx.treatmentPlanDomainConfig.deleteMany({
+        where: { lifecycleId: lifecycleRecord.id },
+      });
+
+      await tx.treatmentPlanDomainConfig.createMany({
+        data: ["diet", "asanas", "medicines"].map((domainKey) => ({
+          lifecycleId: lifecycleRecord.id,
+          domain: keyToEnumDomain[domainKey],
+          status: normalizeLifecycleStatus(normalized.planLifecycle[domainKey]?.status, "ACTIVE"),
+          stopConditions: normalized.planLifecycle[domainKey]?.stopConditions || null,
+          reviewCadenceDays: normalized.planLifecycle[domainKey]?.reviewCadenceDays || null,
+          patientGuidance: normalized.planLifecycle[domainKey]?.patientGuidance || null,
+        })),
+      });
+    }
+
     const dietPlan = await tx.dietPlan.upsert({
       where: { treatmentPlanId: treatmentPlan.id },
       create: {
@@ -1066,6 +1239,14 @@ export const getLatestTreatmentPlan = asyncHandler(async (req, res) => {
           items: true,
         },
       },
+      lifecycle: {
+        include: {
+          domainConfigs: true,
+          feedbackEvents: {
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
       medications: {
         orderBy: { createdAt: "asc" },
       },
@@ -1107,6 +1288,14 @@ export const getPatientTreatmentPlanTimeline = asyncHandler(async (req, res) => 
           status: true,
         },
       },
+      lifecycle: {
+        include: {
+          domainConfigs: true,
+          feedbackEvents: {
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
       dietPlan: {
         include: {
           items: true,
@@ -1129,11 +1318,11 @@ export const getPatientTreatmentPlanTimeline = asyncHandler(async (req, res) => 
   }
 
   const mappedPlans = treatmentPlans.map((plan) => {
-    const lifecycle = plan?.diagnosis?.planLifecycle || null;
+    const lifecycle = getPlanLifecycleSnapshot(plan);
     return {
       ...plan,
       computedStatus: derivePlanStatus(plan),
-      isLegacy: !lifecycle,
+      isLegacy: !plan?.lifecycle,
       lifecycle,
     };
   });
@@ -1177,6 +1366,14 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
     ? await prisma.treatmentPlan.findFirst({
         where: { id: String(treatmentPlanId), patientId },
         include: {
+          lifecycle: {
+            include: {
+              domainConfigs: true,
+              feedbackEvents: {
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
           appointment: {
             select: {
               id: true,
@@ -1188,6 +1385,14 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
         where: { patientId },
         orderBy: { createdAt: "desc" },
         include: {
+          lifecycle: {
+            include: {
+              domainConfigs: true,
+              feedbackEvents: {
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
           appointment: {
             select: {
               id: true,
@@ -1205,21 +1410,7 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
       ? { ...plan.diagnosis }
       : {};
 
-  const lifecycle = normalizePlanLifecycle(diagnosisPayload.planLifecycle || {}) || {
-    effectiveFrom: null,
-    effectiveTo: null,
-    overallStatus: "ACTIVE",
-    diet: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
-    asanas: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
-    medicines: { stopConditions: "", reviewCadenceDays: null, patientGuidance: "", status: "ACTIVE" },
-    feedbackSettings: {
-      notifyOnWorking: true,
-      notifyOnNotEffective: true,
-      notifyOnTerminateRequest: true,
-    },
-    feedbackEvents: [],
-    doctorAlerts: [],
-  };
+  const lifecycle = getPlanLifecycleSnapshot(plan);
 
   const feedbackEvent = {
     id: `feedback-${Date.now()}`,
@@ -1251,7 +1442,79 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
 
   diagnosisPayload.planLifecycle = lifecycle;
 
-  await prisma.$transaction(async (tx) => {
+  const persistedFeedbackEvent = await prisma.$transaction(async (tx) => {
+    const lifecycleRecord = await tx.treatmentPlanLifecycle.upsert({
+      where: { treatmentPlanId: plan.id },
+      create: {
+        treatmentPlanId: plan.id,
+        effectiveFrom: lifecycle.effectiveFrom ? new Date(lifecycle.effectiveFrom) : null,
+        effectiveTo: lifecycle.effectiveTo ? new Date(lifecycle.effectiveTo) : null,
+        overallStatus: normalizeLifecycleStatus(lifecycle.overallStatus, "ACTIVE"),
+        notifyOnWorking: Boolean(lifecycle.feedbackSettings?.notifyOnWorking),
+        notifyOnNotEffective: Boolean(lifecycle.feedbackSettings?.notifyOnNotEffective),
+        notifyOnTerminateRequest: Boolean(lifecycle.feedbackSettings?.notifyOnTerminateRequest),
+      },
+      update: {
+        effectiveFrom: lifecycle.effectiveFrom ? new Date(lifecycle.effectiveFrom) : null,
+        effectiveTo: lifecycle.effectiveTo ? new Date(lifecycle.effectiveTo) : null,
+        overallStatus: normalizeLifecycleStatus(lifecycle.overallStatus, "ACTIVE"),
+        notifyOnWorking: Boolean(lifecycle.feedbackSettings?.notifyOnWorking),
+        notifyOnNotEffective: Boolean(lifecycle.feedbackSettings?.notifyOnNotEffective),
+        notifyOnTerminateRequest: Boolean(lifecycle.feedbackSettings?.notifyOnTerminateRequest),
+      },
+    });
+
+    for (const domainKey of ["diet", "asanas", "medicines"]) {
+      await tx.treatmentPlanDomainConfig.upsert({
+        where: {
+          lifecycleId_domain: {
+            lifecycleId: lifecycleRecord.id,
+            domain: keyToEnumDomain[domainKey],
+          },
+        },
+        create: {
+          lifecycleId: lifecycleRecord.id,
+          domain: keyToEnumDomain[domainKey],
+          status: normalizeLifecycleStatus(lifecycle[domainKey]?.status, "ACTIVE"),
+          stopConditions: lifecycle[domainKey]?.stopConditions || null,
+          reviewCadenceDays: lifecycle[domainKey]?.reviewCadenceDays || null,
+          patientGuidance: lifecycle[domainKey]?.patientGuidance || null,
+        },
+        update: {
+          status: normalizeLifecycleStatus(lifecycle[domainKey]?.status, "ACTIVE"),
+          stopConditions: lifecycle[domainKey]?.stopConditions || null,
+          reviewCadenceDays: lifecycle[domainKey]?.reviewCadenceDays || null,
+          patientGuidance: lifecycle[domainKey]?.patientGuidance || null,
+        },
+      });
+    }
+
+    await tx.treatmentPlanDomainConfig.update({
+      where: {
+        lifecycleId_domain: {
+          lifecycleId: lifecycleRecord.id,
+          domain: keyToEnumDomain[normalizedPlanType],
+        },
+      },
+      data: {
+        status: normalizeLifecycleStatus(lifecycle[normalizedPlanType]?.status, "ACTIVE"),
+      },
+    });
+
+    const createdFeedback = await tx.treatmentPlanFeedback.create({
+      data: {
+        lifecycleId: lifecycleRecord.id,
+        treatmentPlanId: plan.id,
+        appointmentId: plan.appointmentId || null,
+        patientId,
+        doctorId: plan.doctorId,
+        planType: keyToEnumDomain[normalizedPlanType],
+        feedbackType: keyToEnumFeedbackType[normalizedFeedbackType],
+        message: feedbackMessage || null,
+        readByDoctor: false,
+      },
+    });
+
     await tx.treatmentPlan.update({
       where: { id: plan.id },
       data: {
@@ -1267,6 +1530,8 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
         },
       });
     }
+
+    return createdFeedback;
   });
 
   return res.status(200).json(
@@ -1274,11 +1539,80 @@ export const submitPatientTreatmentPlanFeedback = asyncHandler(async (req, res) 
       200,
       {
         treatmentPlanId: plan.id,
-        feedbackEvent,
+        feedbackEvent: {
+          ...feedbackEvent,
+          id: persistedFeedbackEvent.id,
+        },
       },
       "Feedback submitted and doctor notified."
     )
   );
+});
+
+export const getDoctorTreatmentPlanFeedback = asyncHandler(async (req, res) => {
+  const { doctorId } = req.params;
+  const unreadOnly = String(req.query?.unreadOnly || "true").toLowerCase() !== "false";
+
+  if (!doctorId) {
+    throw new ApiError(400, "doctorId is required.");
+  }
+
+  const feedbackEvents = await prisma.treatmentPlanFeedback.findMany({
+    where: {
+      doctorId,
+      ...(unreadOnly ? { readByDoctor: false } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      patient: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      treatmentPlan: {
+        select: {
+          id: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, feedbackEvents, "Doctor plan feedback fetched."));
+});
+
+export const markTreatmentPlanFeedbackRead = asyncHandler(async (req, res) => {
+  const { doctorId, feedbackId } = req.params;
+
+  if (!doctorId || !feedbackId) {
+    throw new ApiError(400, "doctorId and feedbackId are required.");
+  }
+
+  const existing = await prisma.treatmentPlanFeedback.findFirst({
+    where: {
+      id: feedbackId,
+      doctorId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!existing) {
+    throw new ApiError(404, "Feedback event not found for this doctor.");
+  }
+
+  const updated = await prisma.treatmentPlanFeedback.update({
+    where: { id: feedbackId },
+    data: { readByDoctor: true },
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updated, "Feedback marked as read."));
 });
 
 export const markAppointmentLive = asyncHandler(async (req, res) => {
